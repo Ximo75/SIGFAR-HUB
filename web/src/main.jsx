@@ -143,9 +143,26 @@ function Dashboard() {
           <span className="sf-hub-source">Gestión económica y catálogos</span>
         </div>
         {gestionax && !gestionax.error ? (
-          <div className="sf-hub-stats-row">
-            {/* Render gestionax stats when connected */}
-          </div>
+          <>
+            <div className="sf-hub-stats-row" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
+              {[
+                { label: 'Total consumos', value: gestionax.total_consumos, icon: '📦', color: '#0f766e' },
+                { label: 'Consumos agrupados', value: gestionax.consumos_agrupados, icon: '📊', color: '#06b6d4' },
+                { label: 'Medicamentos GFT', value: gestionax.medicamentos_gft, icon: '💊', color: '#7c3aed' },
+              ].map((c, i) => (
+                <div key={i} className="sf-hub-stat">
+                  <div className="sf-hub-stat-top">
+                    <span className="sf-hub-stat-label">{c.label}</span>
+                    <span>{c.icon}</span>
+                  </div>
+                  <div className="sf-hub-stat-val" style={{ color: c.color }}>
+                    <AnimCounter target={c.value} duration={1800} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="sf-hub-connected">Conectado · Oracle Cloud Madrid · ORDS</div>
+          </>
         ) : (
           <div className="sf-hub-pending">
             <div style={{ fontSize: 24, marginBottom: 8 }}>📊</div>
