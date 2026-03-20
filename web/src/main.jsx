@@ -39,35 +39,146 @@ function Nav() {
   )
 }
 
+/* ═══ Animated Counter ═══ */
+function AnimCounter({ target, duration = 1200 }) {
+  const [count, setCount] = React.useState(0)
+  React.useEffect(() => {
+    if (!target && target !== 0) return
+    const n = Number(target)
+    if (isNaN(n)) return
+    let start = null
+    const animate = (ts) => {
+      if (!start) start = ts
+      const progress = Math.min((ts - start) / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setCount(Math.floor(eased * n))
+      if (progress < 1) requestAnimationFrame(animate)
+    }
+    requestAnimationFrame(animate)
+  }, [target, duration])
+  return count
+}
+
 /* ═══ Dashboard ═══ */
 function Dashboard() {
-  const { data: stats, loading } = useFetch('/api/stats')
+  const [hub, setHub] = React.useState(null)
+  const [loading, setLoading] = React.useState(true)
+  const [now, setNow] = React.useState(new Date())
 
-  if (loading) return <div className="sf-loading">Cargando...</div>
+  React.useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
-  const cards = [
-    { label: 'Pacientes activos', value: stats?.pacientes_activos, icon: '🏥', color: '#0f766e' },
-    { label: 'POF generados', value: stats?.pof_mes, icon: '📋', color: '#06b6d4' },
-    { label: 'EM/PRM pendientes', value: stats?.emprm_pendientes, icon: '⚠️', color: '#dc2626' },
-    { label: 'Validaciones', value: stats?.validaciones_mes, icon: '✅', color: '#059669' },
-  ]
+  React.useEffect(() => {
+    fetch(API + '/api/hub/dashboard')
+      .then(r => r.json())
+      .then(d => { setHub(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div className="sf-loading">Conectando con APEX SIGFAR...</div>
+
+  const sigfar = hub?.sigfar
+  const gestionax = hub?.gestionax
+  const sigfarOk = sigfar && !sigfar.error
+
+  const fechaStr = now.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const horaStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 
   return (
     <div>
-      <div className="sf-welcome">
-        <h1>Bienvenido a SIGFAR Hub</h1>
-        <p>Hub de Integración Farmacéutica con IA · CHGUV</p>
+      {/* Cabecera */}
+      <div className="sf-hub-header">
+        <div>
+          <h1>SIGFAR Hub</h1>
+          <p>Centro de integración del Servicio de Farmacia · CHGUV</p>
+        </div>
+        <div className="sf-hub-clock">
+          <div className="sf-hub-clock-time">{horaStr}</div>
+          <div className="sf-hub-clock-date">{fechaStr}</div>
+        </div>
       </div>
-      <div className="sf-stats-grid">
-        {cards.map((c, i) => (
-          <div key={i} className="sf-stat-card">
-            <div className="sf-stat-header">
-              <span className="sf-stat-label">{c.label}</span>
-              <span>{c.icon}</span>
+
+      {/* Plataforma SIGFAR */}
+      <div className="sf-hub-section">
+        <div className="sf-hub-section-hdr">
+          <span>🏥 Plataforma SIGFAR</span>
+          <span className="sf-hub-source">Datos en tiempo real desde Oracle Cloud</span>
+        </div>
+        {sigfarOk ? (
+          <>
+            <div className="sf-hub-stats-row">
+              {[
+                { label: 'Pacientes activos', value: sigfar.pacientes_activos, icon: '🏥', color: '#0f766e' },
+                { label: 'POF este mes', value: sigfar.pof_mes, icon: '📋', color: '#06b6d4' },
+                { label: 'EM/PRM pendientes', value: sigfar.emprm_pendientes, icon: '⚠️', color: '#dc2626' },
+                { label: 'EM/PRM críticos', value: sigfar.emprm_criticos, icon: '🔴', color: '#991b1b' },
+                { label: 'Validaciones mes', value: sigfar.validaciones_mes, icon: '✅', color: '#059669' },
+              ].map((c, i) => (
+                <div key={i} className="sf-hub-stat">
+                  <div className="sf-hub-stat-top">
+                    <span className="sf-hub-stat-label">{c.label}</span>
+                    <span>{c.icon}</span>
+                  </div>
+                  <div className="sf-hub-stat-val" style={{ color: c.color }}>
+                    <AnimCounter target={c.value} />
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="sf-stat-value" style={{ color: c.color }}>{c.value ?? 0}</div>
+            <div className="sf-hub-connected">Conectado · Oracle Cloud Madrid · ORDS</div>
+          </>
+        ) : (
+          <div className="sf-hub-error">
+            ⚠️ APEX SIGFAR no disponible — {sigfar?.error || 'Sin conexión configurada'}
           </div>
-        ))}
+        )}
+      </div>
+
+      {/* GestionAX */}
+      <div className="sf-hub-section">
+        <div className="sf-hub-section-hdr">
+          <span>📊 GestionAX</span>
+          <span className="sf-hub-source">Gestión económica y catálogos</span>
+        </div>
+        {gestionax && !gestionax.error ? (
+          <div className="sf-hub-stats-row">
+            {/* Render gestionax stats when connected */}
+          </div>
+        ) : (
+          <div className="sf-hub-pending">
+            <div style={{ fontSize: 24, marginBottom: 8 }}>📊</div>
+            <p><strong>Pendiente de conexión ORDS</strong></p>
+            <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>Se conectará con APEX GestionAX via Oracle REST Data Services</p>
+            <button className="sf-hub-btn-config">Configurar</button>
+          </div>
+        )}
+      </div>
+
+      {/* Inteligencia Artificial */}
+      <div className="sf-hub-section">
+        <div className="sf-hub-section-hdr">
+          <span>🧠 Inteligencia Artificial</span>
+        </div>
+        <div className="sf-hub-ai-grid">
+          <div className="sf-hub-ai-card">
+            <div className="sf-hub-ai-top">
+              <strong>🤖 Groq Cloud</strong>
+              <span className="sf-hub-ai-badge active">Activo</span>
+            </div>
+            <p>Llama 3.3 70B</p>
+            <span className="sf-hub-ai-tag">Gratuito</span>
+          </div>
+          <div className="sf-hub-ai-card">
+            <div className="sf-hub-ai-top">
+              <strong>🧠 Cerebro IA Local</strong>
+              <span className="sf-hub-ai-badge pending">Pendiente</span>
+            </div>
+            <p>Substrate AI · Qwen 72B</p>
+            <span className="sf-hub-ai-tag">Servidor local</span>
+          </div>
+        </div>
       </div>
     </div>
   )
