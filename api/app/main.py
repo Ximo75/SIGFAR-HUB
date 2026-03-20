@@ -18,6 +18,8 @@ from contextlib import asynccontextmanager
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://sigfar:sigfar2026@db:5432/sigfar")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+APEX_SIGFAR_URL = os.getenv("APEX_SIGFAR_URL", "")
+APEX_GESTIONAX_URL = os.getenv("APEX_GESTIONAX_URL", "")
 
 engine = create_async_engine(DATABASE_URL, echo=False)
 async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -248,3 +250,103 @@ Analíticas:
         await session.commit()
 
     return {"status": "OK", "plan": plan}
+
+# ═══════════════════════════════════════
+# Integración APEX SIGFAR
+# ═══════════════════════════════════════
+@app.get("/api/apex/sigfar/pacientes", tags=["APEX SIGFAR"])
+async def apex_sigfar_pacientes():
+    """Lee pacientes activos desde APEX Plataforma SIGFAR via ORDS"""
+    if not APEX_SIGFAR_URL:
+        raise HTTPException(400, "APEX_SIGFAR_URL no configurada en .env")
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{APEX_SIGFAR_URL}/pacientes/")
+        if resp.status_code != 200:
+            raise HTTPException(502, f"APEX SIGFAR error: {resp.status_code}")
+        return resp.json()
+
+@app.get("/api/apex/sigfar/stats", tags=["APEX SIGFAR"])
+async def apex_sigfar_stats():
+    """Lee estadísticas desde APEX Plataforma SIGFAR via ORDS"""
+    if not APEX_SIGFAR_URL:
+        raise HTTPException(400, "APEX_SIGFAR_URL no configurada en .env")
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{APEX_SIGFAR_URL}/stats/")
+        if resp.status_code != 200:
+            raise HTTPException(502, f"APEX SIGFAR error: {resp.status_code}")
+        return resp.json()
+
+@app.get("/api/apex/sigfar/evoluciones/{id_episodio}", tags=["APEX SIGFAR"])
+async def apex_sigfar_evoluciones(id_episodio: int):
+    """Lee evoluciones de un paciente desde APEX SIGFAR"""
+    if not APEX_SIGFAR_URL:
+        raise HTTPException(400, "APEX_SIGFAR_URL no configurada en .env")
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{APEX_SIGFAR_URL}/evoluciones/{id_episodio}")
+        if resp.status_code != 200:
+            raise HTTPException(502, f"APEX SIGFAR error: {resp.status_code}")
+        return resp.json()
+
+# ═══════════════════════════════════════
+# Integración APEX GestionAX
+# ═══════════════════════════════════════
+@app.get("/api/apex/gestionax/consumos", tags=["APEX GestionAX"])
+async def apex_gestionax_consumos():
+    """Lee consumos desde APEX GestionAX via ORDS"""
+    if not APEX_GESTIONAX_URL:
+        raise HTTPException(400, "APEX_GESTIONAX_URL no configurada en .env")
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{APEX_GESTIONAX_URL}/consumos/")
+        if resp.status_code != 200:
+            raise HTTPException(502, f"APEX GestionAX error: {resp.status_code}")
+        return resp.json()
+
+@app.get("/api/apex/gestionax/catalogo", tags=["APEX GestionAX"])
+async def apex_gestionax_catalogo():
+    """Lee catálogo hospital desde APEX GestionAX via ORDS"""
+    if not APEX_GESTIONAX_URL:
+        raise HTTPException(400, "APEX_GESTIONAX_URL no configurada en .env")
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(f"{APEX_GESTIONAX_URL}/catalogo/")
+        if resp.status_code != 200:
+            raise HTTPException(502, f"APEX GestionAX error: {resp.status_code}")
+        return resp.json()
+
+# ═══════════════════════════════════════
+# Vista unificada (Hub)
+# ═══════════════════════════════════════
+@app.get("/api/hub/dashboard", tags=["Hub Unificado"])
+async def hub_dashboard():
+    """Dashboard unificado: datos locales + APEX SIGFAR + APEX GestionAX"""
+    result = {"local": {}, "sigfar": None, "gestionax": None}
+
+    # Datos locales (PostgreSQL)
+    async with async_session() as session:
+        pac = await session.execute(text("SELECT COUNT(*) FROM hgu_pacientes WHERE estado_p = 'ACTIVO'"))
+        emprm = await session.execute(text("SELECT COUNT(*) FROM hgu_emprm_lineas WHERE decision = 'P'"))
+        result["local"] = {
+            "pacientes_hub": pac.scalar(),
+            "emprm_pendientes_hub": emprm.scalar()
+        }
+
+    # APEX SIGFAR (si configurado)
+    if APEX_SIGFAR_URL:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{APEX_SIGFAR_URL}/stats/")
+                if resp.status_code == 200:
+                    result["sigfar"] = resp.json()
+        except Exception:
+            result["sigfar"] = {"error": "No disponible"}
+
+    # APEX GestionAX (si configurado)
+    if APEX_GESTIONAX_URL:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{APEX_GESTIONAX_URL}/stats/")
+                if resp.status_code == 200:
+                    result["gestionax"] = resp.json()
+        except Exception:
+            result["gestionax"] = {"error": "No disponible"}
+
+    return result

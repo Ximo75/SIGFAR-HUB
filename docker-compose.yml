@@ -34,6 +34,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://sigfar:sigfar2026@db:5432/sigfar
       OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder}
       CORS_ORIGINS: http://localhost:3000
+      APEX_SIGFAR_URL: ${APEX_SIGFAR_URL:-}
+      APEX_GESTIONAX_URL: ${APEX_GESTIONAX_URL:-}
     depends_on:
       db:
         condition: service_healthy
