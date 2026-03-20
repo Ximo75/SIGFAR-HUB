@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  # ═══════════════════════════════════════
+  # PostgreSQL 16
+  # ═══════════════════════════════════════
+  db:
+    image: postgres:16-alpine
+    container_name: sigfar-hub-db
+    environment:
+      POSTGRES_DB: sigfar
+      POSTGRES_USER: sigfar
+      POSTGRES_PASSWORD: sigfar2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - sigfar-pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sigfar"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ═══════════════════════════════════════
+  # FastAPI Backend (Python)
+  # ═══════════════════════════════════════
+  api:
+    build: ./api
+    container_name: sigfar-hub-api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sigfar:sigfar2026@db:5432/sigfar
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-placeholder}
+      CORS_ORIGINS: http://localhost:3000
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./api/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ═══════════════════════════════════════
+  # React Frontend
+  # ═══════════════════════════════════════
+  web:
+    build: ./web
+    container_name: sigfar-hub-web
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - api
+    volumes:
+      - ./web/src:/app/src
+
+volumes:
+  sigfar-pgdata:

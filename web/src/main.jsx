@@ -1,0 +1,464 @@
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import { BrowserRouter, Routes, Route, Link, useParams } from 'react-router-dom'
+import Markdown from 'react-markdown'
+import './style.css'
+
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+/* ═══ Hook fetch ═══ */
+function useFetch(url) {
+  const [data, setData] = React.useState(null)
+  const [loading, setLoading] = React.useState(true)
+  React.useEffect(() => {
+    setLoading(true)
+    fetch(API + url)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [url])
+  return { data, loading }
+}
+
+/* ═══ Nav ═══ */
+function Nav() {
+  return (
+    <nav className="sf-nav">
+      <div className="sf-nav-brand">
+        <div className="sf-nav-icon">S</div>
+        <span className="sf-nav-title">SIGFAR Hub</span>
+        <span className="sf-nav-badge">CHGUV</span>
+      </div>
+      <div className="sf-nav-links">
+        <Link to="/">Dashboard</Link>
+        <Link to="/pacientes">Pacientes</Link>
+        <Link to="/emprm">EM/PRM</Link>
+      </div>
+    </nav>
+  )
+}
+
+/* ═══ Dashboard ═══ */
+function Dashboard() {
+  const { data: stats, loading } = useFetch('/api/stats')
+
+  if (loading) return <div className="sf-loading">Cargando...</div>
+
+  const cards = [
+    { label: 'Pacientes activos', value: stats?.pacientes_activos, icon: '🏥', color: '#0f766e' },
+    { label: 'POF generados', value: stats?.pof_mes, icon: '📋', color: '#06b6d4' },
+    { label: 'EM/PRM pendientes', value: stats?.emprm_pendientes, icon: '⚠️', color: '#dc2626' },
+    { label: 'Validaciones', value: stats?.validaciones_mes, icon: '✅', color: '#059669' },
+  ]
+
+  return (
+    <div>
+      <div className="sf-welcome">
+        <h1>Bienvenido a SIGFAR Hub</h1>
+        <p>Hub de Integración Farmacéutica con IA · CHGUV</p>
+      </div>
+      <div className="sf-stats-grid">
+        {cards.map((c, i) => (
+          <div key={i} className="sf-stat-card">
+            <div className="sf-stat-header">
+              <span className="sf-stat-label">{c.label}</span>
+              <span>{c.icon}</span>
+            </div>
+            <div className="sf-stat-value" style={{ color: c.color }}>{c.value ?? 0}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ═══ PlanViewer (POF Dashboard) ═══ */
+function PlanViewer({ plan, paciente }) {
+  const [collapsed, setCollapsed] = React.useState(false)
+  const now = new Date().toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+  const edad = React.useMemo(() => {
+    if (!paciente?.fecha_nac) return null
+    const nac = new Date(paciente.fecha_nac)
+    const hoy = new Date()
+    let age = hoy.getFullYear() - nac.getFullYear()
+    if (hoy.getMonth() < nac.getMonth() || (hoy.getMonth() === nac.getMonth() && hoy.getDate() < nac.getDate())) age--
+    return age
+  }, [paciente])
+
+  const SECTION_MAP = [
+    { key: 'evaluacion', patterns: ['evaluaci', 'valoraci', 'resumen del paciente', 'contexto', 'situaci', 'datos cl'], icon: '📋', label: 'Evaluación del paciente', chip: 'Clínica', chipColor: 'teal' },
+    { key: 'objetivos', patterns: ['objetivo', 'meta', 'finalidad'], icon: '🎯', label: 'Objetivos del POF', chip: 'Objetivos', chipColor: 'blue' },
+    { key: 'acciones', patterns: ['acci', 'recomendaci', 'ajust', 'intervencion', 'intervención', 'optimizaci', 'propuesta', 'plan de acci'], icon: '⚡', label: 'Acciones a realizar', chip: 'Acciones', chipColor: 'orange' },
+    { key: 'tratamientos', patterns: ['tratamiento', 'medicamento', 'fármaco', 'farmaco', 'medicaci', 'prescri', 'terapia actual'], icon: '💊', label: 'Tratamientos', chip: 'Fármacos', chipColor: 'teal' },
+    { key: 'monitoreo', patterns: ['monitor', 'control', 'vigilancia', 'frecuencia', 'seguimiento'], icon: '📊', label: 'Frecuencia de evaluación', chip: 'Monitoreo', chipColor: 'purple' },
+    { key: 'notificaciones', patterns: ['notificaci', 'alerta', 'aviso', 'señal'], icon: '🔔', label: 'Notificaciones', chip: 'Alertas', chipColor: 'red' },
+    { key: 'emprm', patterns: ['em/prm', 'error de medicaci', 'problema relacionado', 'prm detectad'], icon: '⚠️', label: 'EM/PRM', chip: 'Alertas', chipColor: 'red' },
+    { key: 'conclusion', patterns: ['conclusi', 'resumen final', 'síntesis'], icon: '✅', label: 'Conclusión', chip: 'Resumen', chipColor: 'green' },
+  ]
+
+  function classifySection(title) {
+    const t = title.toLowerCase()
+    for (const s of SECTION_MAP) {
+      if (s.patterns.some(p => t.includes(p))) return s
+    }
+    return { key: 'general', icon: '📋', label: title, chip: 'Info', chipColor: 'teal' }
+  }
+
+  const sections = React.useMemo(() => {
+    const lines = plan.split('\n')
+    const result = []
+    let current = { title: '', lines: [] }
+    for (const line of lines) {
+      const hMatch = line.match(/^#{1,3}\s+(.+)/)
+      if (hMatch) {
+        if (current.title || current.lines.length) result.push({ ...current })
+        current = { title: hMatch[1].replace(/\*+/g, '').trim(), lines: [] }
+      } else {
+        current.lines.push(line)
+      }
+    }
+    if (current.title || current.lines.length) result.push({ ...current })
+    return result.map(s => ({ ...s, meta: classifySection(s.title || 'Resumen') }))
+  }, [plan])
+
+  function annotateText(text) {
+    return text
+      .replace(/(elevad[oa]s?|alto|ALTO|↑|hiperglucemia|hiperpotasemia)/g, '<span class="pof-val-badge pof-val-alto">$1</span>')
+      .replace(/(normal(es)?|OK|adecuad[oa]s?|dentro de rango)/gi, '<span class="pof-val-badge pof-val-ok">$1</span>')
+      .replace(/(baj[oa]s?|BAJO|↓|disminuid[oa]s?|hipoalbuminemia|hipopotasemia|hipoglucemia)/g, '<span class="pof-val-badge pof-val-bajo">$1</span>')
+  }
+
+  function parseTable(lines) {
+    const tableLines = lines.filter(l => l.includes('|'))
+    const sepIdx = tableLines.findIndex(l => l.match(/^\|?\s*[-:| ]+$/))
+    if (sepIdx < 1) return null
+    const parse = l => l.split('|').map(c => c.trim()).filter(Boolean)
+    const headers = parse(tableLines[sepIdx - 1])
+    const rows = tableLines.slice(sepIdx + 1).filter(l => !l.match(/^\|?\s*[-:| ]+$/)).map(parse)
+    if (!rows.length) return null
+    return { headers, rows }
+  }
+
+  function extractAnalytics() {
+    const keys = ['creatinina', 'pcr', 'albúmina', 'albumina', 'glucosa', 'hemoglobina', 'potasio', 'sodio', 'urea']
+    const found = []
+    const seen = new Set()
+    for (const line of plan.split('\n')) {
+      const lower = line.toLowerCase()
+      for (const k of keys) {
+        if (lower.includes(k) && !seen.has(k) && found.length < 6) {
+          const m = line.match(new RegExp(k + '[:\\s]+([\\d.,]+\\s*[a-zA-Z/%]*)', 'i'))
+          if (m) {
+            const status = (lower.includes('alto') || lower.includes('elevad')) ? 'alto' : (lower.includes('bajo') || lower.includes('disminuid')) ? 'bajo' : 'ok'
+            found.push({ param: k.charAt(0).toUpperCase() + k.slice(1), value: m[1].trim(), status })
+            seen.add(k)
+          }
+        }
+      }
+    }
+    return found
+  }
+
+  function renderSectionContent(sec) {
+    const text = sec.lines.join('\n').trim()
+    if (!text) return null
+
+    // Try table first
+    const table = parseTable(sec.lines)
+    if (table) {
+      return (
+        <table className="pof-med-table">
+          <thead><tr>{table.headers.map((h, i) => <th key={i}>{h}</th>)}</tr></thead>
+          <tbody>{table.rows.map((r, ri) => (
+            <tr key={ri}>{r.map((c, ci) => <td key={ci}>{ci === 0 ? <strong>{c}</strong> : c}</td>)}</tr>
+          ))}</tbody>
+        </table>
+      )
+    }
+
+    // Line-by-line rendering
+    const elements = []
+    let i = 0
+    const lines = sec.lines
+    while (i < lines.length) {
+      const line = lines[i].trim()
+      if (!line) { i++; continue }
+
+      // Numbered item → action card
+      const numMatch = line.match(/^\s*(\d+)[\.\)]\s*(.+)/)
+      if (numMatch) {
+        let itemText = numMatch[2]
+        i++
+        while (i < lines.length && lines[i].trim() && !lines[i].trim().match(/^\s*\d+[\.\)]/) && !lines[i].trim().match(/^[\-\*]\s/)) {
+          itemText += ' ' + lines[i].trim()
+          i++
+        }
+        elements.push(
+          <div key={elements.length} className="pof-action-item"
+            dangerouslySetInnerHTML={{ __html: annotateText(itemText.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')) }} />
+        )
+        continue
+      }
+
+      // Bullet item → teal dot
+      const bulletMatch = line.match(/^[\-\*]\s+(.+)/)
+      if (bulletMatch) {
+        elements.push(
+          <div key={elements.length} className="pof-bullet-item">
+            <span className="pof-bullet-dot" />
+            <span dangerouslySetInnerHTML={{ __html: annotateText(bulletMatch[1].replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')) }} />
+          </div>
+        )
+        i++
+        continue
+      }
+
+      // Paragraph text
+      elements.push(
+        <p key={elements.length} className="pof-card-body"
+          dangerouslySetInnerHTML={{ __html: annotateText(line.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')) }} />
+      )
+      i++
+    }
+    return elements.length ? <>{elements}</> : null
+  }
+
+  const analytics = React.useMemo(() => extractAnalytics(), [plan])
+
+  return (
+    <div className="pof-dashboard">
+      <div className="pof-header" onClick={() => setCollapsed(!collapsed)} style={{ cursor: 'pointer' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+          <div>
+            <h3>📋 Plan de Optimización Farmacoterapéutica</h3>
+            {paciente && <p>{paciente.nombre} · {paciente.ubicacion}</p>}
+            <p style={{ fontSize: 11, opacity: 0.7 }}>{now}</p>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="pof-badge-model">Groq · Llama 3.3 70B</span>
+            <span style={{ fontSize: 14 }}>{collapsed ? '▸' : '▾'}</span>
+          </div>
+        </div>
+      </div>
+
+      {!collapsed && (
+        <>
+          {/* Summary grid: datos paciente + analítica destacada */}
+          <div className="pof-summary-grid" style={{ margin: '12px' }}>
+            {paciente && (
+              <div className="pof-summary-card">
+                <h4>📋 Datos del paciente</h4>
+                {[
+                  ['Nombre', paciente.nombre],
+                  ['Edad', edad ? `${edad} años` : '—'],
+                  ['Peso', `${paciente.peso} kg`],
+                  ['Talla', `${paciente.talla} cm`],
+                  ['Diagnóstico', paciente.diagnostico],
+                  ['Ubicación', paciente.ubicacion],
+                ].map(([k, v], i) => (
+                  <div key={i} className="pof-summary-row">
+                    <span className="pof-summary-label">{k}</span>
+                    <span className="pof-summary-value">{v}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="pof-summary-card">
+              <h4>🔬 Analítica destacada</h4>
+              {analytics.length ? analytics.map((a, i) => (
+                <div key={i} className="pof-summary-row">
+                  <span className="pof-summary-label">{a.param}</span>
+                  <span className="pof-summary-value">
+                    {a.value} <span className={`pof-val-badge pof-val-${a.status}`}>{a.status === 'alto' ? '↑' : a.status === 'bajo' ? '↓' : '✓'}</span>
+                  </span>
+                </div>
+              )) : (
+                <div className="pof-summary-row"><span className="pof-summary-label">Sin datos extraídos</span></div>
+              )}
+            </div>
+          </div>
+
+          {/* Section cards */}
+          <div className="pof-cards-container" style={{ margin: '0 12px 12px' }}>
+            {sections.map((sec, i) => {
+              const content = renderSectionContent(sec)
+              if (!content && !sec.title) return null
+              return (
+                <div key={i} className="pof-card">
+                  <div className="pof-card-hdr">
+                    <span className="pof-card-title">
+                      <span className="pof-card-icon">{sec.meta.icon}</span>
+                      {sec.meta.label}
+                    </span>
+                    <span className={`pof-chip pof-chip-${sec.meta.chipColor}`}>{sec.meta.chip}</span>
+                  </div>
+                  {content}
+                </div>
+              )
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+/* ═══ Lista pacientes ═══ */
+function Pacientes() {
+  const { data: pacientes, loading } = useFetch('/api/pacientes')
+
+  if (loading) return <div className="sf-loading">Cargando...</div>
+
+  return (
+    <div>
+      <h2 className="sf-page-title">Pacientes activos</h2>
+      <div className="sf-table-wrap">
+        <table className="sf-table">
+          <thead>
+            <tr>
+              <th>NHC</th><th>Nombre</th><th>Ubicación</th><th>Diagnóstico</th><th>Ingreso</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {(pacientes || []).map(p => (
+              <tr key={p.id_episodio}>
+                <td><strong>{p.nhc}</strong></td>
+                <td>{p.nombre}</td>
+                <td><span className="sf-badge">{p.ubicacion}</span></td>
+                <td className="sf-td-diag">{p.diagnostico}</td>
+                <td>{p.fecha_ingreso}</td>
+                <td><Link to={`/paciente/${p.id_episodio}`} className="sf-btn-sm">Ver →</Link></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/* ═══ Ficha paciente ═══ */
+function FichaPaciente() {
+  const { id } = useParams()
+  const { data: pac, loading: lPac } = useFetch(`/api/pacientes/${id}`)
+  const { data: trats, loading: lTrat } = useFetch(`/api/pacientes/${id}/tratamientos`)
+  const { data: anals, loading: lAnal } = useFetch(`/api/pacientes/${id}/analiticas`)
+  const { data: emprm, loading: lEm } = useFetch(`/api/pacientes/${id}/emprm`)
+  const [sending, setSending] = React.useState(false)
+  const [plan, setPlan] = React.useState(null)
+
+  if (lPac) return <div className="sf-loading">Cargando...</div>
+  if (!pac) return <div>Paciente no encontrado</div>
+
+  async function handleSend2GPT() {
+    setSending(true)
+    try {
+      const r = await fetch(API + `/api/send2gpt/${id}`, { method: 'POST' })
+      const d = await r.json()
+      if (d.status === 'OK') { setPlan(d.plan) }
+      else { alert(d.detail || 'Error') }
+    } catch (e) { alert('Error: ' + e.message) }
+    setSending(false)
+  }
+
+  return (
+    <div>
+      <div className="sf-pac-header">
+        <div>
+          <h2>{pac.nombre}</h2>
+          <p>NHC: {pac.nhc} · {pac.sexo} · {pac.peso}kg · {pac.talla}cm · {pac.ubicacion}</p>
+          <p className="sf-diag">{pac.diagnostico}</p>
+        </div>
+        <button className="sf-btn-gpt" onClick={handleSend2GPT} disabled={sending}>
+          {sending ? '⏳ Enviando a Groq (Llama 3.3 70B)...' : '🤖 Enviar a IA'}
+        </button>
+      </div>
+
+      {plan && <PlanViewer plan={plan} paciente={pac} />}
+
+      <div className="sf-grid-2">
+        <div className="sf-card">
+          <h3>💊 Tratamientos ({trats?.length || 0})</h3>
+          {(trats || []).map(t => (
+            <div key={t.trat_id} className="sf-trat-row">
+              <strong>{t.principio_activo}</strong> — {t.pauta}
+            </div>
+          ))}
+        </div>
+        <div className="sf-card">
+          <h3>🔬 Analíticas ({anals?.length || 0})</h3>
+          {(anals || []).map((a, i) => (
+            <div key={i} className={`sf-anal-row sf-anal-${(a.estado || '').toLowerCase()}`}>
+              <span>{a.parametro}</span>
+              <strong>{a.valor} {a.unidad}</strong>
+              <span className={`sf-badge-${(a.estado || '').toLowerCase()}`}>{a.estado}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {emprm && emprm.length > 0 && (
+        <div className="sf-card sf-emprm-section">
+          <h3>⚠️ EM/PRM ({emprm.length})</h3>
+          {emprm.map(e => (
+            <div key={e.codigo} className={`sf-emprm-row sf-grav-${(e.gravedad || '').toLowerCase()}`}>
+              <div className="sf-emprm-head">
+                <strong>{e.farmaco}</strong>
+                <span className="sf-badge-grav">{e.gravedad}</span>
+                <span className="sf-badge-dec">{e.decision === 'P' ? 'Pendiente' : 'Aceptado'}</span>
+              </div>
+              <p>{e.descripcion}</p>
+              <p className="sf-emprm-accion">→ {e.accion}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ═══ EM/PRM pendientes ═══ */
+function EmprmPendientes() {
+  const { data, loading } = useFetch('/api/emprm/pendientes')
+
+  if (loading) return <div className="sf-loading">Cargando...</div>
+
+  return (
+    <div>
+      <h2 className="sf-page-title">EM/PRM Pendientes</h2>
+      {(data || []).map(e => (
+        <div key={e.codigo} className={`sf-emprm-card sf-grav-${(e.gravedad || '').toLowerCase()}`}>
+          <div className="sf-emprm-head">
+            <strong>{e.farmaco}</strong>
+            <span className="sf-badge-grav">{e.gravedad}</span>
+            <Link to={`/paciente/${e.id_episodio}`} className="sf-btn-sm">
+              {e.nhc} — {e.ubicacion}
+            </Link>
+          </div>
+          <p>{e.descripcion}</p>
+          <p className="sf-emprm-accion">→ {e.accion}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/* ═══ App ═══ */
+function App() {
+  return (
+    <BrowserRouter>
+      <Nav />
+      <main className="sf-main">
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/pacientes" element={<Pacientes />} />
+          <Route path="/paciente/:id" element={<FichaPaciente />} />
+          <Route path="/emprm" element={<EmprmPendientes />} />
+        </Routes>
+      </main>
+    </BrowserRouter>
+  )
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />)

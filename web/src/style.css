@@ -1,0 +1,173 @@
+/* ════════════════════════════════════════════════════════════════
+   SIGFAR React — Estilos v1
+   ════════════════════════════════════════════════════════════════ */
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Plus Jakarta Sans',-apple-system,sans-serif;background:#f0f4f7;color:#1a1a2e;min-height:100vh}
+a{color:#0f766e;text-decoration:none}
+
+/* Nav */
+.sf-nav{background:#fff;border-bottom:1px solid #e2e8f0;padding:0 28px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.04)}
+.sf-nav-brand{display:flex;align-items:center;gap:10px}
+.sf-nav-icon{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900}
+.sf-nav-title{font-size:20px;font-weight:800;color:#0f172a}
+.sf-nav-badge{font-size:10px;background:#e0f7f4;color:#0f766e;padding:2px 8px;border-radius:5px;font-weight:700}
+.sf-nav-links{display:flex;gap:4px}
+.sf-nav-links a{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;color:#64748b;transition:all .2s}
+.sf-nav-links a:hover{background:#f0fdf4;color:#0f766e}
+
+/* Main */
+.sf-main{max-width:1200px;margin:0 auto;padding:24px 28px 60px}
+
+/* Welcome */
+.sf-welcome{margin-bottom:24px}
+.sf-welcome h1{font-size:26px;font-weight:800;color:#0f172a;letter-spacing:-.5px}
+.sf-welcome p{font-size:14px;color:#64748b;margin-top:4px}
+
+/* Stats grid */
+.sf-stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px}
+.sf-stat-card{background:#fff;border-radius:14px;padding:20px;border:1px solid #e8edf2;transition:all .3s}
+.sf-stat-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.06);transform:translateY(-2px)}
+.sf-stat-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.sf-stat-label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+.sf-stat-value{font-size:36px;font-weight:800;letter-spacing:-1px}
+
+/* Cards */
+.sf-card{background:#fff;border-radius:14px;padding:20px;border:1px solid #e8edf2;margin-bottom:16px}
+.sf-card h3{font-size:16px;font-weight:700;color:#0f172a;margin-bottom:12px}
+
+/* Grid 2 cols */
+.sf-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* Table */
+.sf-table-wrap{background:#fff;border-radius:14px;border:1px solid #e8edf2;overflow:hidden}
+.sf-table{width:100%;border-collapse:collapse;font-size:13px}
+.sf-table th{background:#f8fafc;padding:10px 14px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;font-weight:600;border-bottom:1px solid #e8edf2}
+.sf-table td{padding:10px 14px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.sf-table tr:hover{background:#f8fafb}
+.sf-td-diag{max-width:300px;font-size:12px;color:#64748b;line-height:1.4}
+.sf-badge{font-size:10px;background:#e0f7f4;color:#0f766e;padding:2px 8px;border-radius:5px;font-weight:700}
+.sf-btn-sm{font-size:11px;padding:4px 12px;border-radius:6px;background:#0f766e;color:#fff;font-weight:600;transition:all .2s}
+.sf-btn-sm:hover{background:#0d6358;color:#fff}
+
+/* Paciente header */
+.sf-pac-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;background:#fff;border-radius:14px;padding:20px;border:1px solid #e8edf2}
+.sf-pac-header h2{font-size:20px;font-weight:800;color:#0f172a}
+.sf-pac-header p{font-size:13px;color:#64748b;margin-top:4px}
+.sf-diag{margin-top:8px;font-size:13px;color:#334155;line-height:1.5;background:#f8fafc;padding:8px 12px;border-radius:8px;border-left:3px solid #0f766e}
+.sf-btn-gpt{padding:10px 24px;border-radius:10px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff;font-size:14px;font-weight:700;border:none;cursor:pointer;transition:all .2s;white-space:nowrap}
+.sf-btn-gpt:hover{transform:scale(1.03);box-shadow:0 4px 16px rgba(15,118,110,.3)}
+.sf-btn-gpt:disabled{opacity:.6;cursor:wait}
+
+/* Plan */
+.sf-plan-card{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:14px;padding:20px;margin-bottom:20px}
+.sf-plan-card h3{font-size:16px;font-weight:700;color:#0f766e;margin-bottom:10px}
+.sf-plan-text{font-size:13px;line-height:1.7;color:#334155;white-space:pre-wrap;font-family:'Plus Jakarta Sans',sans-serif}
+
+/* Tratamientos */
+.sf-trat-row{padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px}
+.sf-trat-row strong{color:#0f172a}
+
+/* Analíticas */
+.sf-anal-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}
+.sf-badge-ok{background:#d1fae5;color:#065f46;padding:1px 8px;border-radius:4px;font-size:10px;font-weight:700}
+.sf-badge-alto{background:#fee2e2;color:#991b1b;padding:1px 8px;border-radius:4px;font-size:10px;font-weight:700}
+.sf-badge-bajo{background:#fef3c7;color:#92400e;padding:1px 8px;border-radius:4px;font-size:10px;font-weight:700}
+
+/* EM/PRM */
+.sf-emprm-section{margin-top:16px}
+.sf-emprm-row,.sf-emprm-card{padding:14px;border-radius:10px;margin-bottom:10px;border-left:4px solid #e8edf2}
+.sf-grav-grave{border-left-color:#dc2626;background:#fef2f2}
+.sf-grav-moderada{border-left-color:#f59e0b;background:#fffbeb}
+.sf-grav-leve{border-left-color:#3b82f6;background:#eff6ff}
+.sf-emprm-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.sf-badge-grav{font-size:10px;padding:2px 8px;border-radius:4px;font-weight:700;background:rgba(0,0,0,.06)}
+.sf-badge-dec{font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600;background:#fef3c7;color:#92400e}
+.sf-emprm-row p,.sf-emprm-card p{font-size:13px;color:#334155;line-height:1.5;margin:4px 0}
+.sf-emprm-accion{font-weight:600;color:#0f766e}
+
+/* Loading */
+.sf-loading{text-align:center;padding:60px;color:#94a3b8;font-size:15px}
+.sf-page-title{font-size:22px;font-weight:800;color:#0f172a;margin-bottom:16px}
+
+/* Responsive */
+@media(max-width:900px){.sf-stats-grid{grid-template-columns:repeat(2,1fr)}.sf-grid-2{grid-template-columns:1fr}}
+@media(max-width:600px){.sf-stats-grid{grid-template-columns:1fr}.sf-nav{padding:0 14px}.sf-main{padding:16px 14px}}
+
+/* ════════════════════════════════════════════════════════════════
+   POF Dashboard
+   ════════════════════════════════════════════════════════════════ */
+.pof-dashboard{background:#fff;border:1px solid #d1e7dd;border-radius:14px;margin-bottom:20px;overflow:hidden}
+.pof-header{padding:16px 20px;background:linear-gradient(135deg,#0f766e,#14b8a6);color:#fff}
+.pof-header h3{font-size:16px;font-weight:700;margin:0}
+.pof-header p{font-size:12px;opacity:.85;margin:2px 0 0}
+.pof-badge-model{font-size:11px;font-weight:700;background:rgba(255,255,255,.2);padding:4px 12px;border-radius:6px;backdrop-filter:blur(4px);letter-spacing:.3px}
+
+/* Sections */
+.pof-section{border:1px solid #e8edf2;border-radius:10px;overflow:hidden}
+.pof-section-hdr{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#f8fafc;cursor:pointer;font-size:13px;font-weight:700;color:#0f172a;transition:background .2s;user-select:none}
+.pof-section-hdr:hover{background:#f0fdf4}
+.pof-section-icon{font-size:15px}
+.pof-section-arrow{font-size:13px;color:#94a3b8;margin-left:auto;transition:transform .2s}
+.pof-section-body{padding:12px 14px;border-top:1px solid #e8edf2}
+.pof-section-body.collapsed{display:none}
+
+/* Medication table */
+.pof-med-table{width:100%;border-collapse:collapse;font-size:12px}
+.pof-med-table th{background:#f8fafc;padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;font-weight:600;border-bottom:1px solid #e8edf2}
+.pof-med-table td{padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px}
+.pof-med-table td strong{color:#0f172a;font-weight:700}
+.pof-med-table tr:hover{background:#f8fafb}
+
+/* Monitoring table */
+.pof-mon-table{width:100%;border-collapse:collapse;font-size:12px}
+.pof-mon-table th{background:#f8fafc;padding:8px 10px;text-align:left;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;font-weight:600;border-bottom:1px solid #e8edf2}
+.pof-mon-table td{padding:8px 10px;border-bottom:1px solid #f1f5f9;font-size:12px}
+.pof-mon-table td strong{color:#0f172a;font-weight:700}
+
+/* Recommendation cards */
+.pof-rec-card{padding:10px 14px;border-radius:8px;border-left:4px solid #0f766e;background:#f0fdf4;font-size:13px;line-height:1.5;color:#334155;margin-bottom:8px}
+.pof-rec-card strong{color:#0f172a}
+
+/* Value badges */
+.pof-val-badge{font-size:10px;padding:1px 6px;border-radius:4px;font-weight:700;margin:0 2px}
+.pof-val-alto{background:#fee2e2;color:#991b1b}
+.pof-val-ok{background:#d1fae5;color:#065f46}
+.pof-val-bajo{background:#fef3c7;color:#92400e}
+
+/* Conclusion */
+.pof-conclusion{font-size:13px;line-height:1.7;color:#334155;background:#f0fdf4;padding:14px;border-radius:8px;border-left:4px solid #0f766e}
+.pof-conclusion strong{color:#0f172a}
+
+/* Narrative fallback */
+.pof-narrative{font-size:13px;line-height:1.7;color:#334155}
+.pof-narrative strong{color:#0f172a}
+
+/* POF Cards */
+.pof-cards-container{display:flex;flex-direction:column;gap:12px;margin-top:12px}
+.pof-card{background:#fff;border-radius:12px;border:1px solid #e8edf2;box-shadow:0 2px 8px rgba(0,0,0,.04);padding:16px;transition:all .2s}
+.pof-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.pof-card-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #f1f5f9}
+.pof-card-title{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;color:#0f172a}
+.pof-card-icon{font-size:18px}
+.pof-chip{font-size:10px;font-weight:700;padding:3px 10px;border-radius:12px;text-transform:uppercase;letter-spacing:.4px}
+.pof-chip-teal{background:#e0f7f4;color:#0f766e}
+.pof-chip-blue{background:#dbeafe;color:#1e40af}
+.pof-chip-orange{background:#fef3c7;color:#92400e}
+.pof-chip-purple{background:#ede9fe;color:#6d28d9}
+.pof-chip-red{background:#fee2e2;color:#991b1b}
+.pof-chip-green{background:#d1fae5;color:#065f46}
+.pof-card-body{font-size:13px;color:#334155;line-height:1.7}
+.pof-action-item{border-left:3px solid #0f766e;background:#f8fafb;border-radius:0 8px 8px 0;padding:10px 14px;margin:6px 0;font-size:13px;line-height:1.6}
+.pof-action-item strong{color:#0f172a}
+.pof-bullet-item{display:flex;align-items:flex-start;gap:8px;padding:4px 0;font-size:13px;line-height:1.6}
+.pof-bullet-dot{width:6px;height:6px;border-radius:50%;background:#0f766e;margin-top:7px;flex-shrink:0}
+.pof-summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.pof-summary-card{background:#fff;border-radius:12px;border:1px solid #e8edf2;padding:14px 16px}
+.pof-summary-card h4{font-size:13px;font-weight:700;color:#0f766e;margin:0 0 10px;text-transform:uppercase;letter-spacing:.5px}
+.pof-summary-row{display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:1px solid #f8fafc}
+.pof-summary-row:last-child{border-bottom:none}
+.pof-summary-label{color:#64748b;font-weight:500}
+.pof-summary-value{color:#0f172a;font-weight:600}
+
+/* POF Dashboard responsive */
+@media(max-width:600px){.pof-header{flex-direction:column;gap:8px}.pof-summary-grid{grid-template-columns:1fr}}
