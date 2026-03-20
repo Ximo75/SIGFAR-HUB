@@ -171,3 +171,31 @@ a{color:#0f766e;text-decoration:none}
 
 /* POF Dashboard responsive */
 @media(max-width:600px){.pof-header{flex-direction:column;gap:8px}.pof-summary-grid{grid-template-columns:1fr}}
+
+/* ════════════════════════════════════════════════════════════════
+   Integraciones
+   ════════════════════════════════════════════════════════════════ */
+.sf-integ-header{background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:16px;padding:28px;color:#fff;margin-bottom:20px}
+.sf-integ-header h1{font-size:24px;font-weight:800;margin:0 0 6px}
+.sf-integ-header p{font-size:14px;opacity:.7;margin:0}
+.sf-integ-badge{display:inline-block;font-size:10px;font-weight:700;padding:4px 12px;border-radius:12px;background:rgba(255,255,255,.1);color:#14b8a6;margin-top:10px;border:1px solid rgba(20,184,166,.3)}
+.sf-integ-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+.sf-integ-card{background:#fff;border-radius:12px;border:1px solid #e8edf2;padding:16px;display:flex;flex-direction:column;gap:6px;transition:all .2s}
+.sf-integ-card:hover{box-shadow:0 4px 12px rgba(0,0,0,.06);transform:translateY(-2px)}
+.sf-integ-card-hdr{display:flex;align-items:center;gap:8px}
+.sf-integ-card-icon{font-size:20px}
+.sf-integ-card-name{font-size:14px;font-weight:700;color:#0f172a}
+.sf-integ-card-desc{font-size:12px;color:#64748b;line-height:1.4}
+.sf-integ-card-footer{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:8px;border-top:1px solid #f1f5f9}
+.sf-integ-card-type{font-size:10px;color:#94a3b8;font-weight:600}
+.sf-integ-status{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px}
+.sf-integ-status.connected{background:#d1fae5;color:#065f46}
+.sf-integ-status.pending{background:#f3f4f6;color:#6b7280}
+.sf-integ-flow{background:#fff;border-radius:14px;border:1px solid #e8edf2;padding:24px;margin-bottom:24px}
+.sf-integ-flow h3{font-size:16px;font-weight:700;color:#0f172a;margin:0 0 16px}
+.sf-integ-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.sf-integ-kpi{background:#fff;border-radius:12px;border:1px solid #e8edf2;padding:16px;text-align:center}
+.sf-integ-kpi-val{font-size:28px;font-weight:800;color:#0f766e}
+.sf-integ-kpi-label{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-top:4px}
+@media(max-width:900px){.sf-integ-grid{grid-template-columns:repeat(2,1fr)}.sf-integ-kpis{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.sf-integ-grid{grid-template-columns:1fr}.sf-integ-kpis{grid-template-columns:1fr}}

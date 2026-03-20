@@ -33,6 +33,7 @@ function Nav() {
         <Link to="/">Dashboard</Link>
         <Link to="/pacientes">Pacientes</Link>
         <Link to="/emprm">EM/PRM</Link>
+        <Link to="/integraciones">Integraciones</Link>
       </div>
     </nav>
   )
@@ -444,6 +445,122 @@ function EmprmPendientes() {
   )
 }
 
+/* ═══ Integraciones ═══ */
+function Integraciones() {
+  const systems = [
+    { icon: '🏥', name: 'Plataforma SIGFAR (APEX)', desc: 'Seguimiento clínico, POF, EM/PRM', type: 'REST API', status: 'connected' },
+    { icon: '📊', name: 'GestionAX (APEX)', desc: 'Gestión económica, consumos, catálogos', type: 'REST API', status: 'connected' },
+    { icon: '🤖', name: 'Groq Cloud', desc: 'IA generativa Llama 3.3 70B', type: 'REST API', status: 'connected' },
+    { icon: '🧠', name: 'Cerebro IA Local', desc: 'Substrate AI · Qwen 72B (servidor local)', type: 'REST API', status: 'pending' },
+    { icon: '💊', name: 'CIMA AEMPS', desc: 'Fichas técnicas medicamentos España', type: 'REST API', status: 'connected' },
+    { icon: '🔬', name: 'ClinicalTrials.gov', desc: 'Ensayos clínicos evidencia', type: 'REST API', status: 'connected' },
+    { icon: '📋', name: 'ICCA (UCI)', desc: 'Datos clínicos tiempo real UCI', type: 'HL7/API', status: 'pending' },
+    { icon: '📝', name: 'OMA (Planta)', desc: 'Prescripción electrónica planta', type: 'HL7/API', status: 'pending' },
+    { icon: '🏛️', name: 'Hosix (HCE)', desc: 'Historia clínica electrónica', type: 'FHIR R4', status: 'pending' },
+    { icon: '🧫', name: 'Microbiología', desc: 'Cultivos y antibiogramas', type: 'HL7', status: 'pending' },
+    { icon: '🧪', name: 'Laboratorio', desc: 'Analíticas tiempo real', type: 'HL7', status: 'pending' },
+    { icon: '🍽️', name: 'Versia', desc: 'Prescripción nutrición parenteral', type: 'REST API', status: 'pending' },
+    { icon: '🤖', name: 'ExactaMix Pro', desc: 'Robot elaboración NP', type: 'API', status: 'pending' },
+    { icon: '💉', name: 'ChemoMaker', desc: 'Robot elaboración quimioterapia', type: 'API/PDF', status: 'pending' },
+    { icon: '📦', name: 'Kardex', desc: 'Preparación carros unidosis', type: 'API', status: 'pending' },
+    { icon: '🔒', name: 'Armarios estupefacientes', desc: 'Gestión estupefacientes', type: 'API', status: 'pending' },
+    { icon: '📱', name: 'Abucasis/SIA', desc: 'Receta electrónica CV', type: 'FHIR', status: 'pending' },
+    { icon: '📚', name: 'PubMed/NCBI', desc: 'Evidencia científica', type: 'REST API', status: 'connected' },
+  ]
+
+  const connected = systems.filter(s => s.status === 'connected').length
+
+  return (
+    <div>
+      {/* Cabecera */}
+      <div className="sf-integ-header">
+        <h1>SIGFAR Hub — Centro de Integraciones</h1>
+        <p>Conectando todos los sistemas del Servicio de Farmacia · CHGUV</p>
+        <span className="sf-integ-badge">Substrate AI · Subgen AI</span>
+      </div>
+
+      {/* Grid de conexiones */}
+      <div className="sf-integ-grid">
+        {systems.map((s, i) => (
+          <div key={i} className="sf-integ-card">
+            <div className="sf-integ-card-hdr">
+              <span className="sf-integ-card-icon">{s.icon}</span>
+              <span className="sf-integ-card-name">{s.name}</span>
+            </div>
+            <span className="sf-integ-card-desc">{s.desc}</span>
+            <div className="sf-integ-card-footer">
+              <span className="sf-integ-card-type">{s.type}</span>
+              <span className={`sf-integ-status ${s.status}`}>
+                {s.status === 'connected' ? 'Conectado' : 'Pendiente'}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Flujo de datos */}
+      <div className="sf-integ-flow">
+        <h3>Flujo de datos</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          {/* Sistemas clínicos */}
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {['ICCA', 'OMA', 'Hosix', 'Lab', 'Micro'].map(s => (
+              <div key={s} style={{ background: '#f8fafc', border: '1px solid #e8edf2', borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 600, color: '#334155' }}>{s}</div>
+            ))}
+          </div>
+          <div style={{ fontSize: 20, color: '#94a3b8', letterSpacing: 8 }}>↓ ↓ ↓ ↓ ↓</div>
+
+          {/* Hub central */}
+          <div style={{ background: 'linear-gradient(135deg, #0f766e, #14b8a6)', color: '#fff', borderRadius: 14, padding: '20px 48px', fontWeight: 800, fontSize: 16, boxShadow: '0 4px 20px rgba(15,118,110,.3)', textAlign: 'center' }}>
+            🧠 SIGFAR Hub + IA
+          </div>
+
+          {/* Flechas abajo */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 80, textAlign: 'center' }}>
+            <div style={{ fontSize: 20, color: '#94a3b8' }}>↕</div>
+            <div style={{ fontSize: 20, color: '#94a3b8' }}>↕</div>
+          </div>
+
+          {/* Elaboración + Interfaces */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, width: '100%' }}>
+            <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: 12, padding: 16, textAlign: 'center' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#92400e', marginBottom: 8 }}>Elaboración</div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                {['Versia', 'ExactaMix', 'ChemoMaker', 'Kardex'].map(s => (
+                  <div key={s} style={{ background: '#fff', border: '1px solid #e8edf2', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, color: '#334155' }}>{s}</div>
+                ))}
+              </div>
+            </div>
+            <div style={{ background: '#eff6ff', border: '1px solid #dbeafe', borderRadius: 12, padding: 16, textAlign: 'center' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1e40af', marginBottom: 8 }}>Interfaces</div>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                {['React Web', 'APEX SIGFAR', 'APEX GestionAX'].map(s => (
+                  <div key={s} style={{ background: '#fff', border: '1px solid #e8edf2', borderRadius: 6, padding: '4px 10px', fontSize: 11, fontWeight: 600, color: '#334155' }}>{s}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* KPIs */}
+      <div className="sf-integ-kpis">
+        {[
+          { value: `${connected}/18`, label: 'Sistemas conectados' },
+          { value: '4', label: 'APIs activas' },
+          { value: '1', label: 'Modelos IA (Groq Llama 3.3)' },
+          { value: '5', label: 'Pacientes unificados' },
+        ].map((k, i) => (
+          <div key={i} className="sf-integ-kpi">
+            <div className="sf-integ-kpi-val">{k.value}</div>
+            <div className="sf-integ-kpi-label">{k.label}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ═══ App ═══ */
 function App() {
   return (
@@ -455,6 +572,7 @@ function App() {
           <Route path="/pacientes" element={<Pacientes />} />
           <Route path="/paciente/:id" element={<FichaPaciente />} />
           <Route path="/emprm" element={<EmprmPendientes />} />
+          <Route path="/integraciones" element={<Integraciones />} />
         </Routes>
       </main>
     </BrowserRouter>
