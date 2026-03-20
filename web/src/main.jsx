@@ -137,18 +137,18 @@ function Dashboard() {
       </div>
 
       {/* GestionAX */}
-      <div className="sf-hub-section">
+      <div className="sf-hub-section" style={{ borderLeft: '4px solid #1e40af' }}>
         <div className="sf-hub-section-hdr">
           <span>📊 GestionAX</span>
-          <span className="sf-hub-source">Gestión económica y catálogos</span>
+          <span className="sf-hub-source">Gestión económica y catálogos · Oracle Cloud</span>
         </div>
         {gestionax && !gestionax.error ? (
           <>
             <div className="sf-hub-stats-row" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
               {[
-                { label: 'Total consumos', value: gestionax.total_consumos, icon: '📦', color: '#0f766e' },
-                { label: 'Consumos agrupados', value: gestionax.consumos_agrupados, icon: '📊', color: '#06b6d4' },
-                { label: 'Medicamentos GFT', value: gestionax.medicamentos_gft, icon: '💊', color: '#7c3aed' },
+                { label: 'Total consumos', value: gestionax.total_consumos, icon: '📦', color: '#1e40af' },
+                { label: 'Medicamentos GFT', value: gestionax.medicamentos_gft, icon: '💊', color: '#0f766e' },
+                { label: 'Consumos agrupados', value: gestionax.consumos_agrupados, icon: '📊', color: '#c2410c' },
               ].map((c, i) => (
                 <div key={i} className="sf-hub-stat">
                   <div className="sf-hub-stat-top">
