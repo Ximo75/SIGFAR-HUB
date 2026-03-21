@@ -350,3 +350,169 @@ async def hub_dashboard():
             result["gestionax"] = {"error": "No disponible"}
 
     return result
+
+
+# ═══════════════════════════════════════
+# Cuadro de Mandos Jefatura
+# ═══════════════════════════════════════
+
+@app.get("/api/jefatura/resumen", tags=["Jefatura"])
+async def jefatura_resumen():
+    """KPIs ejecutivos: cruza SIGFAR + GestionAX"""
+    result = {}
+    # SIGFAR
+    if APEX_SIGFAR_URL:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(f"{APEX_SIGFAR_URL}/stats/")
+                if r.status_code == 200:
+                    result["sigfar"] = r.json()
+        except:
+            result["sigfar"] = None
+    # GestionAX
+    if APEX_GESTIONAX_URL:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(f"{APEX_GESTIONAX_URL}/stats/")
+                if r.status_code == 200:
+                    result["gestionax"] = r.json()
+        except:
+            result["gestionax"] = None
+    return result
+
+@app.get("/api/jefatura/gasto-servicio", tags=["Jefatura"])
+async def jefatura_gasto_servicio():
+    """Gasto farmacéutico por servicio clínico"""
+    if not APEX_GESTIONAX_URL:
+        raise HTTPException(400, "APEX_GESTIONAX_URL no configurada")
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{APEX_GESTIONAX_URL}/gasto-servicio/")
+        if r.status_code != 200:
+            raise HTTPException(502, f"GestionAX error: {r.status_code}")
+        return r.json()
+
+@app.get("/api/jefatura/top-medicamentos", tags=["Jefatura"])
+async def jefatura_top_medicamentos():
+    """Top 50 medicamentos por gasto"""
+    if not APEX_GESTIONAX_URL:
+        raise HTTPException(400, "APEX_GESTIONAX_URL no configurada")
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{APEX_GESTIONAX_URL}/top-medicamentos/")
+        if r.status_code != 200:
+            raise HTTPException(502, f"GestionAX error: {r.status_code}")
+        return r.json()
+
+@app.get("/api/jefatura/evolucion-mensual", tags=["Jefatura"])
+async def jefatura_evolucion_mensual():
+    """Evolución mensual del gasto farmacéutico"""
+    if not APEX_GESTIONAX_URL:
+        raise HTTPException(400, "APEX_GESTIONAX_URL no configurada")
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{APEX_GESTIONAX_URL}/evolucion-mensual/")
+        if r.status_code != 200:
+            raise HTTPException(502, f"GestionAX error: {r.status_code}")
+        return r.json()
+
+@app.get("/api/jefatura/adherencia-gft", tags=["Jefatura"])
+async def jefatura_adherencia_gft():
+    """Adherencia a la GFT por servicio"""
+    if not APEX_GESTIONAX_URL:
+        raise HTTPException(400, "APEX_GESTIONAX_URL no configurada")
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{APEX_GESTIONAX_URL}/adherencia-gft/")
+        if r.status_code != 200:
+            raise HTTPException(502, f"GestionAX error: {r.status_code}")
+        return r.json()
+
+@app.get("/api/jefatura/proa-antibioticos", tags=["Jefatura"])
+async def jefatura_proa():
+    """Consumo de antibióticos por servicio (PROA)"""
+    if not APEX_GESTIONAX_URL:
+        raise HTTPException(400, "APEX_GESTIONAX_URL no configurada")
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{APEX_GESTIONAX_URL}/proa-antibioticos/")
+        if r.status_code != 200:
+            raise HTTPException(502, f"GestionAX error: {r.status_code}")
+        return r.json()
+
+@app.get("/api/jefatura/dispensaciones", tags=["Jefatura"])
+async def jefatura_dispensaciones():
+    """Stats de dispensaciones ambulatorias"""
+    if not APEX_GESTIONAX_URL:
+        raise HTTPException(400, "APEX_GESTIONAX_URL no configurada")
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{APEX_GESTIONAX_URL}/dispensaciones-stats/")
+        if r.status_code != 200:
+            raise HTTPException(502, f"GestionAX error: {r.status_code}")
+        return r.json()
+
+@app.get("/api/jefatura/dispensaciones-patologia", tags=["Jefatura"])
+async def jefatura_dispensaciones_patologia():
+    """Top patologías por coste en dispensaciones ambulatorias"""
+    if not APEX_GESTIONAX_URL:
+        raise HTTPException(400, "APEX_GESTIONAX_URL no configurada")
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(f"{APEX_GESTIONAX_URL}/dispensaciones-patologia/")
+        if r.status_code != 200:
+            raise HTTPException(502, f"GestionAX error: {r.status_code}")
+        return r.json()
+
+@app.post("/api/jefatura/sigfarita", tags=["Jefatura"])
+async def sigfarita_chat(pregunta: dict):
+    """Sigfarita: asistente IA para la Dra. Blasco. Recibe pregunta en lenguaje natural, consulta datos y responde."""
+    texto = pregunta.get("texto", "")
+    if not texto:
+        raise HTTPException(400, "Falta campo 'texto' con la pregunta")
+
+    # Obtener contexto de datos
+    contexto_datos = ""
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            # Stats SIGFAR
+            r1 = await client.get(f"{APEX_SIGFAR_URL}/stats/")
+            if r1.status_code == 200:
+                contexto_datos += f"Datos SIGFAR: {r1.text}\n"
+            # Stats GestionAX
+            r2 = await client.get(f"{APEX_GESTIONAX_URL}/stats/")
+            if r2.status_code == 200:
+                contexto_datos += f"Datos GestionAX: {r2.text}\n"
+            # Gasto por servicio
+            r3 = await client.get(f"{APEX_GESTIONAX_URL}/gasto-servicio/")
+            if r3.status_code == 200:
+                contexto_datos += f"Gasto por servicio: {r3.text}\n"
+    except:
+        pass
+
+    # Llamar a Groq con contexto
+    system_prompt = """Eres Sigfarita, la asistente IA de la Dra. Pilar Blasco Segura, Jefa del Servicio de Farmacia del Consorcio Hospital General Universitario de Valencia (CHGUV).
+
+Tu función es ayudarla en la gestión del servicio respondiendo preguntas sobre:
+- Gasto farmacéutico por servicio clínico
+- Top medicamentos por coste
+- Indicadores de productividad farmacéutica (validaciones, EM/PRM)
+- Adherencia a la Guía Farmacoterapéutica (GFT)
+- Dispensaciones ambulatorias
+- Indicadores PROA (antibióticos)
+- Cualquier cruce de datos clínicos y económicos
+
+Responde siempre en español, de forma clara y concisa. Si tienes datos numéricos disponibles, úsalos. Si no tienes datos suficientes, indícalo. Incluye siempre cifras concretas cuando las tengas. Tutea a la Dra. Blasco. Sé profesional pero cercana."""
+
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
+    body = {
+        "model": "llama-3.3-70b-versatile",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Datos disponibles del hospital:\n{contexto_datos}\n\nPregunta de la Dra. Blasco: {texto}"}
+        ],
+        "max_tokens": 2000,
+        "temperature": 0.3
+    }
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=body)
+        if r.status_code != 200:
+            raise HTTPException(502, f"Groq error: {r.status_code} - {r.text}")
+        data = r.json()
+        respuesta = data["choices"][0]["message"]["content"]
+
+    return {"pregunta": texto, "respuesta": respuesta, "modelo": "llama-3.3-70b-groq"}
