@@ -301,3 +301,9 @@ a{color:#0f766e;text-decoration:none}
 @media(max-width:1000px){.jef-kpis{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:900px){.jef-layout{grid-template-columns:1fr}.jef-sidebar{position:relative;top:0;height:500px}}
 @media(max-width:600px){.jef-kpis{grid-template-columns:repeat(2,1fr)}.jef-header{flex-direction:column;text-align:center}}
+
+/* Lucide utilities */
+.inline{display:inline;vertical-align:middle;margin-right:4px}
+.shrink-0{flex-shrink:0}
+.nav-icon{display:inline-flex;align-items:center;margin-right:6px;opacity:.7}
+.sigfarita-btn-sound{display:flex;align-items:center;justify-content:center}

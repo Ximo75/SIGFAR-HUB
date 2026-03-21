@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Link, useParams } from 'react-router-dom'
 import Markdown from 'react-markdown'
+import { Activity, AlertTriangle, BarChart3, Brain, Building2, CheckCircle2, ChevronDown, ChevronRight, Clipboard, Clock, Database, FileText, FlaskConical, Heart, Home, LayoutDashboard, Mic, MicOff, MonitorSmartphone, Network, Pill, Send, Server, Shield, ShieldAlert, Stethoscope, TrendingDown, TrendingUp, Users, Volume2, VolumeX, Wallet, Zap } from 'lucide-react'
 import './style.css'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -30,11 +31,11 @@ function Nav() {
         <span className="sf-nav-badge">CHGUV</span>
       </div>
       <div className="sf-nav-links">
-        <Link to="/">Dashboard</Link>
-        <Link to="/pacientes">Pacientes</Link>
-        <Link to="/emprm">EM/PRM</Link>
-        <Link to="/integraciones">Integraciones</Link>
-        <Link to="/jefatura">👩‍⚕️ Jefatura</Link>
+        <Link to="/"><span className="nav-icon"><LayoutDashboard size={16}/></span>Dashboard</Link>
+        <Link to="/pacientes"><span className="nav-icon"><Users size={16}/></span>Pacientes</Link>
+        <Link to="/emprm"><span className="nav-icon"><ShieldAlert size={16}/></span>EM/PRM</Link>
+        <Link to="/integraciones"><span className="nav-icon"><Network size={16}/></span>Integraciones</Link>
+        <Link to="/jefatura"><span className="nav-icon"><BarChart3 size={16}/></span>Jefatura</Link>
       </div>
     </nav>
   )
@@ -104,23 +105,22 @@ function Dashboard() {
       {/* Plataforma SIGFAR */}
       <div className="sf-hub-section">
         <div className="sf-hub-section-hdr">
-          <span>🏥 Plataforma SIGFAR</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Building2 size={20} className="shrink-0" style={{ color: '#0f766e' }}/> Plataforma SIGFAR</span>
           <span className="sf-hub-source">Datos en tiempo real desde Oracle Cloud</span>
         </div>
         {sigfarOk ? (
           <>
             <div className="sf-hub-stats-row">
               {[
-                { label: 'Pacientes activos', value: sigfar.pacientes_activos, icon: '🏥', color: '#0f766e' },
-                { label: 'POF este mes', value: sigfar.pof_mes, icon: '📋', color: '#06b6d4' },
-                { label: 'EM/PRM pendientes', value: sigfar.emprm_pendientes, icon: '⚠️', color: '#dc2626' },
-                { label: 'EM/PRM críticos', value: sigfar.emprm_criticos, icon: '🔴', color: '#991b1b' },
-                { label: 'Validaciones mes', value: sigfar.validaciones_mes, icon: '✅', color: '#059669' },
+                { label: 'Pacientes activos', value: sigfar.pacientes_activos, color: '#0f766e' },
+                { label: 'POF este mes', value: sigfar.pof_mes, color: '#06b6d4' },
+                { label: 'EM/PRM pendientes', value: sigfar.emprm_pendientes, color: '#dc2626' },
+                { label: 'EM/PRM críticos', value: sigfar.emprm_criticos, color: '#991b1b' },
+                { label: 'Validaciones mes', value: sigfar.validaciones_mes, color: '#059669' },
               ].map((c, i) => (
                 <div key={i} className="sf-hub-stat">
                   <div className="sf-hub-stat-top">
                     <span className="sf-hub-stat-label">{c.label}</span>
-                    <span>{c.icon}</span>
                   </div>
                   <div className="sf-hub-stat-val" style={{ color: c.color }}>
                     <AnimCounter target={c.value} />
@@ -128,11 +128,11 @@ function Dashboard() {
                 </div>
               ))}
             </div>
-            <div className="sf-hub-connected">Conectado · Oracle Cloud Madrid · ORDS</div>
+            <div className="sf-hub-connected"><CheckCircle2 size={12} className="inline"/> Conectado · Oracle Cloud Madrid · ORDS</div>
           </>
         ) : (
           <div className="sf-hub-error">
-            ⚠️ APEX SIGFAR no disponible — {sigfar?.error || 'Sin conexión configurada'}
+            <AlertTriangle size={16} className="inline"/> APEX SIGFAR no disponible — {sigfar?.error || 'Sin conexión configurada'}
           </div>
         )}
       </div>
@@ -140,21 +140,20 @@ function Dashboard() {
       {/* GestionAX */}
       <div className="sf-hub-section" style={{ borderLeft: '4px solid #1e40af' }}>
         <div className="sf-hub-section-hdr">
-          <span>📊 GestionAX</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Wallet size={20} className="shrink-0" style={{ color: '#1e40af' }}/> GestionAX</span>
           <span className="sf-hub-source">Gestión económica y catálogos · Oracle Cloud</span>
         </div>
         {gestionax && !gestionax.error ? (
           <>
             <div className="sf-hub-stats-row" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
               {[
-                { label: 'Total consumos', value: gestionax.total_consumos, icon: '📦', color: '#1e40af' },
-                { label: 'Medicamentos GFT', value: gestionax.medicamentos_gft, icon: '💊', color: '#0f766e' },
-                { label: 'Consumos agrupados', value: gestionax.consumos_agrupados, icon: '📊', color: '#c2410c' },
+                { label: 'Total consumos', value: gestionax.total_consumos, color: '#1e40af' },
+                { label: 'Medicamentos GFT', value: gestionax.medicamentos_gft, color: '#0f766e' },
+                { label: 'Consumos agrupados', value: gestionax.consumos_agrupados, color: '#c2410c' },
               ].map((c, i) => (
                 <div key={i} className="sf-hub-stat">
                   <div className="sf-hub-stat-top">
                     <span className="sf-hub-stat-label">{c.label}</span>
-                    <span>{c.icon}</span>
                   </div>
                   <div className="sf-hub-stat-val" style={{ color: c.color }}>
                     <AnimCounter target={c.value} duration={1800} />
@@ -162,11 +161,11 @@ function Dashboard() {
                 </div>
               ))}
             </div>
-            <div className="sf-hub-connected">Conectado · Oracle Cloud Madrid · ORDS</div>
+            <div className="sf-hub-connected"><CheckCircle2 size={12} className="inline"/> Conectado · Oracle Cloud Madrid · ORDS</div>
           </>
         ) : (
           <div className="sf-hub-pending">
-            <div style={{ fontSize: 24, marginBottom: 8 }}>📊</div>
+            <Wallet size={24} style={{ color: '#94a3b8', marginBottom: 8 }}/>
             <p><strong>Pendiente de conexión ORDS</strong></p>
             <p style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>Se conectará con APEX GestionAX via Oracle REST Data Services</p>
             <button className="sf-hub-btn-config">Configurar</button>
@@ -177,21 +176,21 @@ function Dashboard() {
       {/* Inteligencia Artificial */}
       <div className="sf-hub-section">
         <div className="sf-hub-section-hdr">
-          <span>🧠 Inteligencia Artificial</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Brain size={20} className="shrink-0" style={{ color: '#7c3aed' }}/> Inteligencia Artificial</span>
         </div>
         <div className="sf-hub-ai-grid">
           <div className="sf-hub-ai-card">
             <div className="sf-hub-ai-top">
-              <strong>🤖 Groq Cloud</strong>
-              <span className="sf-hub-ai-badge active">Activo</span>
+              <strong style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Server size={16} className="shrink-0" style={{ color: '#475569' }}/> Groq Cloud</strong>
+              <span className="sf-hub-ai-badge active"><Activity size={12} className="inline"/>Activo</span>
             </div>
             <p>Llama 3.3 70B</p>
             <span className="sf-hub-ai-tag">Gratuito</span>
           </div>
           <div className="sf-hub-ai-card">
             <div className="sf-hub-ai-top">
-              <strong>🧠 Cerebro IA Local</strong>
-              <span className="sf-hub-ai-badge pending">Pendiente</span>
+              <strong style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Brain size={16} className="shrink-0" style={{ color: '#475569' }}/> Cerebro IA Local</strong>
+              <span className="sf-hub-ai-badge pending"><Clock size={12} className="inline"/>Pendiente</span>
             </div>
             <p>Substrate AI · Qwen 72B</p>
             <span className="sf-hub-ai-tag">Servidor local</span>
@@ -217,14 +216,14 @@ function PlanViewer({ plan, paciente }) {
   }, [paciente])
 
   const SECTION_MAP = [
-    { key: 'evaluacion', patterns: ['evaluaci', 'valoraci', 'resumen del paciente', 'contexto', 'situaci', 'datos cl'], icon: '📋', label: 'Evaluación del paciente', chip: 'Clínica', chipColor: 'teal' },
-    { key: 'objetivos', patterns: ['objetivo', 'meta', 'finalidad'], icon: '🎯', label: 'Objetivos del POF', chip: 'Objetivos', chipColor: 'blue' },
-    { key: 'acciones', patterns: ['acci', 'recomendaci', 'ajust', 'intervencion', 'intervención', 'optimizaci', 'propuesta', 'plan de acci'], icon: '⚡', label: 'Acciones a realizar', chip: 'Acciones', chipColor: 'orange' },
-    { key: 'tratamientos', patterns: ['tratamiento', 'medicamento', 'fármaco', 'farmaco', 'medicaci', 'prescri', 'terapia actual'], icon: '💊', label: 'Tratamientos', chip: 'Fármacos', chipColor: 'teal' },
-    { key: 'monitoreo', patterns: ['monitor', 'control', 'vigilancia', 'frecuencia', 'seguimiento'], icon: '📊', label: 'Frecuencia de evaluación', chip: 'Monitoreo', chipColor: 'purple' },
-    { key: 'notificaciones', patterns: ['notificaci', 'alerta', 'aviso', 'señal'], icon: '🔔', label: 'Notificaciones', chip: 'Alertas', chipColor: 'red' },
-    { key: 'emprm', patterns: ['em/prm', 'error de medicaci', 'problema relacionado', 'prm detectad'], icon: '⚠️', label: 'EM/PRM', chip: 'Alertas', chipColor: 'red' },
-    { key: 'conclusion', patterns: ['conclusi', 'resumen final', 'síntesis'], icon: '✅', label: 'Conclusión', chip: 'Resumen', chipColor: 'green' },
+    { key: 'evaluacion', patterns: ['evaluaci', 'valoraci', 'resumen del paciente', 'contexto', 'situaci', 'datos cl'], icon: <Clipboard size={18} className="shrink-0" style={{ color: '#0f766e' }}/>, label: 'Evaluación del paciente', chip: 'Clínica', chipColor: 'teal' },
+    { key: 'objetivos', patterns: ['objetivo', 'meta', 'finalidad'], icon: <CheckCircle2 size={18} className="shrink-0" style={{ color: '#1e40af' }}/>, label: 'Objetivos del POF', chip: 'Objetivos', chipColor: 'blue' },
+    { key: 'acciones', patterns: ['acci', 'recomendaci', 'ajust', 'intervencion', 'intervención', 'optimizaci', 'propuesta', 'plan de acci'], icon: <Zap size={18} className="shrink-0" style={{ color: '#c2410c' }}/>, label: 'Acciones a realizar', chip: 'Acciones', chipColor: 'orange' },
+    { key: 'tratamientos', patterns: ['tratamiento', 'medicamento', 'fármaco', 'farmaco', 'medicaci', 'prescri', 'terapia actual'], icon: <Pill size={18} className="shrink-0" style={{ color: '#0f766e' }}/>, label: 'Tratamientos', chip: 'Fármacos', chipColor: 'teal' },
+    { key: 'monitoreo', patterns: ['monitor', 'control', 'vigilancia', 'frecuencia', 'seguimiento'], icon: <BarChart3 size={18} className="shrink-0" style={{ color: '#7c3aed' }}/>, label: 'Frecuencia de evaluación', chip: 'Monitoreo', chipColor: 'purple' },
+    { key: 'notificaciones', patterns: ['notificaci', 'alerta', 'aviso', 'señal'], icon: <AlertTriangle size={18} className="shrink-0" style={{ color: '#dc2626' }}/>, label: 'Notificaciones', chip: 'Alertas', chipColor: 'red' },
+    { key: 'emprm', patterns: ['em/prm', 'error de medicaci', 'problema relacionado', 'prm detectad'], icon: <ShieldAlert size={18} className="shrink-0" style={{ color: '#dc2626' }}/>, label: 'EM/PRM', chip: 'Alertas', chipColor: 'red' },
+    { key: 'conclusion', patterns: ['conclusi', 'resumen final', 'síntesis'], icon: <CheckCircle2 size={18} className="shrink-0" style={{ color: '#059669' }}/>, label: 'Conclusión', chip: 'Resumen', chipColor: 'green' },
   ]
 
   function classifySection(title) {
@@ -232,7 +231,7 @@ function PlanViewer({ plan, paciente }) {
     for (const s of SECTION_MAP) {
       if (s.patterns.some(p => t.includes(p))) return s
     }
-    return { key: 'general', icon: '📋', label: title, chip: 'Info', chipColor: 'teal' }
+    return { key: 'general', icon: <Clipboard size={18} className="shrink-0" style={{ color: '#475569' }}/>, label: title, chip: 'Info', chipColor: 'teal' }
   }
 
   const sections = React.useMemo(() => {
@@ -315,7 +314,7 @@ function PlanViewer({ plan, paciente }) {
       const line = lines[i].trim()
       if (!line) { i++; continue }
 
-      // Numbered item → action card
+      // Numbered item
       const numMatch = line.match(/^\s*(\d+)[\.\)]\s*(.+)/)
       if (numMatch) {
         let itemText = numMatch[2]
@@ -331,7 +330,7 @@ function PlanViewer({ plan, paciente }) {
         continue
       }
 
-      // Bullet item → teal dot
+      // Bullet item
       const bulletMatch = line.match(/^[\-\*]\s+(.+)/)
       if (bulletMatch) {
         elements.push(
@@ -361,24 +360,24 @@ function PlanViewer({ plan, paciente }) {
       <div className="pof-header" onClick={() => setCollapsed(!collapsed)} style={{ cursor: 'pointer' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
           <div>
-            <h3>📋 Plan de Optimización Farmacoterapéutica</h3>
+            <h3><Clipboard size={18} className="inline"/> Plan de Optimización Farmacoterapéutica</h3>
             {paciente && <p>{paciente.nombre} · {paciente.ubicacion}</p>}
             <p style={{ fontSize: 11, opacity: 0.7 }}>{now}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span className="pof-badge-model">Groq · Llama 3.3 70B</span>
-            <span style={{ fontSize: 14 }}>{collapsed ? '▸' : '▾'}</span>
+            <span style={{ fontSize: 14 }}>{collapsed ? <ChevronRight size={14}/> : <ChevronDown size={14}/>}</span>
           </div>
         </div>
       </div>
 
       {!collapsed && (
         <>
-          {/* Summary grid: datos paciente + analítica destacada */}
+          {/* Summary grid */}
           <div className="pof-summary-grid" style={{ margin: '12px' }}>
             {paciente && (
               <div className="pof-summary-card">
-                <h4>📋 Datos del paciente</h4>
+                <h4><Clipboard size={14} className="inline"/> Datos del paciente</h4>
                 {[
                   ['Nombre', paciente.nombre],
                   ['Edad', edad ? `${edad} años` : '—'],
@@ -395,7 +394,7 @@ function PlanViewer({ plan, paciente }) {
               </div>
             )}
             <div className="pof-summary-card">
-              <h4>🔬 Analítica destacada</h4>
+              <h4><FlaskConical size={14} className="inline"/> Analítica destacada</h4>
               {analytics.length ? analytics.map((a, i) => (
                 <div key={i} className="pof-summary-row">
                   <span className="pof-summary-label">{a.param}</span>
@@ -492,6 +491,13 @@ function FichaPaciente() {
     setSending(false)
   }
 
+  function gravIcon(grav) {
+    const g = (grav || '').toLowerCase()
+    if (g === 'grave') return <AlertTriangle size={16} className="shrink-0" style={{ color: '#dc2626' }}/>
+    if (g === 'moderada') return <ShieldAlert size={16} className="shrink-0" style={{ color: '#f59e0b' }}/>
+    return <Shield size={16} className="shrink-0" style={{ color: '#3b82f6' }}/>
+  }
+
   return (
     <div>
       <div className="sf-pac-header">
@@ -501,7 +507,7 @@ function FichaPaciente() {
           <p className="sf-diag">{pac.diagnostico}</p>
         </div>
         <button className="sf-btn-gpt" onClick={handleSend2GPT} disabled={sending}>
-          {sending ? '⏳ Enviando a Groq (Llama 3.3 70B)...' : '🤖 Enviar a IA'}
+          {sending ? <><Clock size={16} className="inline"/> Enviando a Groq (Llama 3.3 70B)...</> : <><Zap size={16} className="inline"/> Enviar a IA</>}
         </button>
       </div>
 
@@ -509,7 +515,7 @@ function FichaPaciente() {
 
       <div className="sf-grid-2">
         <div className="sf-card">
-          <h3>💊 Tratamientos ({trats?.length || 0})</h3>
+          <h3><Pill size={16} className="inline"/> Tratamientos ({trats?.length || 0})</h3>
           {(trats || []).map(t => (
             <div key={t.trat_id} className="sf-trat-row">
               <strong>{t.principio_activo}</strong> — {t.pauta}
@@ -517,7 +523,7 @@ function FichaPaciente() {
           ))}
         </div>
         <div className="sf-card">
-          <h3>🔬 Analíticas ({anals?.length || 0})</h3>
+          <h3><FlaskConical size={16} className="inline"/> Analíticas ({anals?.length || 0})</h3>
           {(anals || []).map((a, i) => (
             <div key={i} className={`sf-anal-row sf-anal-${(a.estado || '').toLowerCase()}`}>
               <span>{a.parametro}</span>
@@ -530,10 +536,11 @@ function FichaPaciente() {
 
       {emprm && emprm.length > 0 && (
         <div className="sf-card sf-emprm-section">
-          <h3>⚠️ EM/PRM ({emprm.length})</h3>
+          <h3><ShieldAlert size={16} className="inline"/> EM/PRM ({emprm.length})</h3>
           {emprm.map(e => (
             <div key={e.codigo} className={`sf-emprm-row sf-grav-${(e.gravedad || '').toLowerCase()}`}>
               <div className="sf-emprm-head">
+                {gravIcon(e.gravedad)}
                 <strong>{e.farmaco}</strong>
                 <span className="sf-badge-grav">{e.gravedad}</span>
                 <span className="sf-badge-dec">{e.decision === 'P' ? 'Pendiente' : 'Aceptado'}</span>
@@ -554,12 +561,20 @@ function EmprmPendientes() {
 
   if (loading) return <div className="sf-loading">Cargando...</div>
 
+  function gravIcon(grav) {
+    const g = (grav || '').toLowerCase()
+    if (g === 'grave') return <AlertTriangle size={16} className="shrink-0" style={{ color: '#dc2626' }}/>
+    if (g === 'moderada') return <ShieldAlert size={16} className="shrink-0" style={{ color: '#f59e0b' }}/>
+    return <Shield size={16} className="shrink-0" style={{ color: '#3b82f6' }}/>
+  }
+
   return (
     <div>
       <h2 className="sf-page-title">EM/PRM Pendientes</h2>
       {(data || []).map(e => (
         <div key={e.codigo} className={`sf-emprm-card sf-grav-${(e.gravedad || '').toLowerCase()}`}>
           <div className="sf-emprm-head">
+            {gravIcon(e.gravedad)}
             <strong>{e.farmaco}</strong>
             <span className="sf-badge-grav">{e.gravedad}</span>
             <Link to={`/paciente/${e.id_episodio}`} className="sf-btn-sm">
@@ -577,24 +592,24 @@ function EmprmPendientes() {
 /* ═══ Integraciones ═══ */
 function Integraciones() {
   const systems = [
-    { icon: '🏥', name: 'Plataforma SIGFAR (APEX)', desc: 'Seguimiento clínico, POF, EM/PRM', type: 'REST API', status: 'connected' },
-    { icon: '📊', name: 'GestionAX (APEX)', desc: 'Gestión económica, consumos, catálogos', type: 'REST API', status: 'connected' },
-    { icon: '🤖', name: 'Groq Cloud', desc: 'IA generativa Llama 3.3 70B', type: 'REST API', status: 'connected' },
-    { icon: '🧠', name: 'Cerebro IA Local', desc: 'Substrate AI · Qwen 72B (servidor local)', type: 'REST API', status: 'pending' },
-    { icon: '💊', name: 'CIMA AEMPS', desc: 'Fichas técnicas medicamentos España', type: 'REST API', status: 'connected' },
-    { icon: '🔬', name: 'ClinicalTrials.gov', desc: 'Ensayos clínicos evidencia', type: 'REST API', status: 'connected' },
-    { icon: '📋', name: 'ICCA (UCI)', desc: 'Datos clínicos tiempo real UCI', type: 'HL7/API', status: 'pending' },
-    { icon: '📝', name: 'OMA (Planta)', desc: 'Prescripción electrónica planta', type: 'HL7/API', status: 'pending' },
-    { icon: '🏛️', name: 'Hosix (HCE)', desc: 'Historia clínica electrónica', type: 'FHIR R4', status: 'pending' },
-    { icon: '🧫', name: 'Microbiología', desc: 'Cultivos y antibiogramas', type: 'HL7', status: 'pending' },
-    { icon: '🧪', name: 'Laboratorio', desc: 'Analíticas tiempo real', type: 'HL7', status: 'pending' },
-    { icon: '🍽️', name: 'Versia', desc: 'Prescripción nutrición parenteral', type: 'REST API', status: 'pending' },
-    { icon: '🤖', name: 'ExactaMix Pro', desc: 'Robot elaboración NP', type: 'API', status: 'pending' },
-    { icon: '💉', name: 'ChemoMaker', desc: 'Robot elaboración quimioterapia', type: 'API/PDF', status: 'pending' },
-    { icon: '📦', name: 'Kardex', desc: 'Preparación carros unidosis', type: 'API', status: 'pending' },
-    { icon: '🔒', name: 'Armarios estupefacientes', desc: 'Gestión estupefacientes', type: 'API', status: 'pending' },
-    { icon: '📱', name: 'Abucasis/SIA', desc: 'Receta electrónica CV', type: 'FHIR', status: 'pending' },
-    { icon: '📚', name: 'PubMed/NCBI', desc: 'Evidencia científica', type: 'REST API', status: 'connected' },
+    { icon: <Stethoscope size={20}/>, name: 'Plataforma SIGFAR (APEX)', desc: 'Seguimiento clínico, POF, EM/PRM', type: 'REST API', status: 'connected' },
+    { icon: <Wallet size={20}/>, name: 'GestionAX (APEX)', desc: 'Gestión económica, consumos, catálogos', type: 'REST API', status: 'connected' },
+    { icon: <Server size={20}/>, name: 'Groq Cloud', desc: 'IA generativa Llama 3.3 70B', type: 'REST API', status: 'connected' },
+    { icon: <Brain size={20}/>, name: 'Cerebro IA Local', desc: 'Substrate AI · Qwen 72B (servidor local)', type: 'REST API', status: 'pending' },
+    { icon: <Pill size={20}/>, name: 'CIMA AEMPS', desc: 'Fichas técnicas medicamentos España', type: 'REST API', status: 'connected' },
+    { icon: <FlaskConical size={20}/>, name: 'ClinicalTrials.gov', desc: 'Ensayos clínicos evidencia', type: 'REST API', status: 'connected' },
+    { icon: <Activity size={20}/>, name: 'ICCA (UCI)', desc: 'Datos clínicos tiempo real UCI', type: 'HL7/API', status: 'pending' },
+    { icon: <FileText size={20}/>, name: 'OMA (Planta)', desc: 'Prescripción electrónica planta', type: 'HL7/API', status: 'pending' },
+    { icon: <Building2 size={20}/>, name: 'Hosix (HCE)', desc: 'Historia clínica electrónica', type: 'FHIR R4', status: 'pending' },
+    { icon: <FlaskConical size={20}/>, name: 'Microbiología', desc: 'Cultivos y antibiogramas', type: 'HL7', status: 'pending' },
+    { icon: <FlaskConical size={20}/>, name: 'Laboratorio', desc: 'Analíticas tiempo real', type: 'HL7', status: 'pending' },
+    { icon: <Clipboard size={20}/>, name: 'Versia', desc: 'Prescripción nutrición parenteral', type: 'REST API', status: 'pending' },
+    { icon: <MonitorSmartphone size={20}/>, name: 'ExactaMix Pro', desc: 'Robot elaboración NP', type: 'API', status: 'pending' },
+    { icon: <MonitorSmartphone size={20}/>, name: 'ChemoMaker', desc: 'Robot elaboración quimioterapia', type: 'API/PDF', status: 'pending' },
+    { icon: <Database size={20}/>, name: 'Kardex', desc: 'Preparación carros unidosis', type: 'API', status: 'pending' },
+    { icon: <Shield size={20}/>, name: 'Armarios estupefacientes', desc: 'Gestión estupefacientes', type: 'API', status: 'pending' },
+    { icon: <Heart size={20}/>, name: 'Abucasis/SIA', desc: 'Receta electrónica CV', type: 'FHIR', status: 'pending' },
+    { icon: <FileText size={20}/>, name: 'PubMed/NCBI', desc: 'Evidencia científica', type: 'REST API', status: 'connected' },
   ]
 
   const connected = systems.filter(s => s.status === 'connected').length
@@ -613,14 +628,14 @@ function Integraciones() {
         {systems.map((s, i) => (
           <div key={i} className="sf-integ-card">
             <div className="sf-integ-card-hdr">
-              <span className="sf-integ-card-icon">{s.icon}</span>
+              <span className="sf-integ-card-icon" style={{ color: '#475569' }}>{s.icon}</span>
               <span className="sf-integ-card-name">{s.name}</span>
             </div>
             <span className="sf-integ-card-desc">{s.desc}</span>
             <div className="sf-integ-card-footer">
               <span className="sf-integ-card-type">{s.type}</span>
               <span className={`sf-integ-status ${s.status}`}>
-                {s.status === 'connected' ? 'Conectado' : 'Pendiente'}
+                {s.status === 'connected' ? <><CheckCircle2 size={10} className="inline"/>Conectado</> : <><Clock size={10} className="inline"/>Pendiente</>}
               </span>
             </div>
           </div>
@@ -640,8 +655,8 @@ function Integraciones() {
           <div style={{ fontSize: 20, color: '#94a3b8', letterSpacing: 8 }}>↓ ↓ ↓ ↓ ↓</div>
 
           {/* Hub central */}
-          <div style={{ background: 'linear-gradient(135deg, #0f766e, #14b8a6)', color: '#fff', borderRadius: 14, padding: '20px 48px', fontWeight: 800, fontSize: 16, boxShadow: '0 4px 20px rgba(15,118,110,.3)', textAlign: 'center' }}>
-            🧠 SIGFAR Hub + IA
+          <div style={{ background: 'linear-gradient(135deg, #0f766e, #14b8a6)', color: '#fff', borderRadius: 14, padding: '20px 48px', fontWeight: 800, fontSize: 16, boxShadow: '0 4px 20px rgba(15,118,110,.3)', textAlign: 'center', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Brain size={22}/> SIGFAR Hub + IA
           </div>
 
           {/* Flechas abajo */}
@@ -675,12 +690,13 @@ function Integraciones() {
       {/* KPIs */}
       <div className="sf-integ-kpis">
         {[
-          { value: `${connected}/18`, label: 'Sistemas conectados' },
-          { value: '4', label: 'APIs activas' },
-          { value: '1', label: 'Modelos IA (Groq Llama 3.3)' },
-          { value: '5', label: 'Pacientes unificados' },
+          { value: `${connected}/18`, label: 'Sistemas conectados', icon: <Network size={16}/> },
+          { value: '4', label: 'APIs activas', icon: <Server size={16}/> },
+          { value: '1', label: 'Modelos IA (Groq Llama 3.3)', icon: <Brain size={16}/> },
+          { value: '5', label: 'Pacientes unificados', icon: <Users size={16}/> },
         ].map((k, i) => (
           <div key={i} className="sf-integ-kpi">
+            <div style={{ color: '#94a3b8', marginBottom: 4 }}>{k.icon}</div>
             <div className="sf-integ-kpi-val">{k.value}</div>
             <div className="sf-integ-kpi-label">{k.label}</div>
           </div>
@@ -812,7 +828,7 @@ function Jefatura() {
             <span className="jef-badge">Sigfarita · Asistente IA activa</span>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div className="jef-clock">{horaStr}</div>
+            <div className="jef-clock" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}><Clock size={16}/> {horaStr}</div>
             <div className="jef-date" style={{ textTransform: 'capitalize' }}>{fechaStr}</div>
           </div>
         </div>
@@ -838,7 +854,7 @@ function Jefatura() {
 
         {/* 3. GASTO POR SERVICIO */}
         <div className="jef-card">
-          <div className="jef-card-hdr">💰 Gasto por servicio clínico</div>
+          <div className="jef-card-hdr"><Wallet size={18} className="shrink-0" style={{ color: '#475569' }}/> Gasto por servicio clínico</div>
           <div className="jef-card-body">
             {gastoServicio ? (
               <table className="jef-table">
@@ -856,13 +872,13 @@ function Jefatura() {
                   ))}
                 </tbody>
               </table>
-            ) : <div className="jef-warn">⚠️ Datos no disponibles</div>}
+            ) : <div className="jef-warn"><AlertTriangle size={14} className="inline"/> Datos no disponibles</div>}
           </div>
         </div>
 
         {/* 4. TOP MEDICAMENTOS */}
         <div className="jef-card">
-          <div className="jef-card-hdr">💊 Top medicamentos por gasto</div>
+          <div className="jef-card-hdr"><Pill size={18} className="shrink-0" style={{ color: '#475569' }}/> Top medicamentos por gasto</div>
           <div className="jef-card-body">
             {topMeds ? (
               <>
@@ -899,13 +915,13 @@ function Jefatura() {
                   </div>
                 )}
               </>
-            ) : <div className="jef-warn">⚠️ Datos no disponibles</div>}
+            ) : <div className="jef-warn"><AlertTriangle size={14} className="inline"/> Datos no disponibles</div>}
           </div>
         </div>
 
         {/* 5. EVOLUCIÓN MENSUAL */}
         <div className="jef-card">
-          <div className="jef-card-hdr">📈 Evolución mensual del gasto</div>
+          <div className="jef-card-hdr"><TrendingUp size={18} className="shrink-0" style={{ color: '#475569' }}/> Evolución mensual del gasto</div>
           <div className="jef-card-body">
             {evolucion ? (
               <table className="jef-table">
@@ -923,7 +939,7 @@ function Jefatura() {
                   ))}
                 </tbody>
               </table>
-            ) : <div className="jef-warn">⚠️ Datos no disponibles</div>}
+            ) : <div className="jef-warn"><AlertTriangle size={14} className="inline"/> Datos no disponibles</div>}
           </div>
         </div>
       </div>
@@ -931,14 +947,14 @@ function Jefatura() {
       {/* COLUMNA DERECHA — Sigfarita sidebar */}
       <div className="jef-sidebar">
         <div className="jef-sidebar-hdr">
-          <h3>🤖 Sigfarita</h3>
+          <h3><Brain size={18} className="shrink-0"/> Sigfarita</h3>
           <p>Asistente IA · Dra. Blasco</p>
         </div>
 
         <div className="sigfarita-messages">
           {messages.length === 0 && !thinking && (
             <div className="sigfarita-welcome">
-              <span className="sig-emoji">🤖</span>
+              <span className="sig-emoji"><Brain size={36} style={{ color: 'rgba(255,255,255,.4)' }}/></span>
               Hola Dra. Blasco, soy Sigfarita.<br/>Pregúntame lo que necesites sobre el servicio.
             </div>
           )}
@@ -954,9 +970,9 @@ function Jefatura() {
 
         <div className="sigfarita-input-area">
           <div className="sigfarita-sound-row">
-            <button className="sigfarita-btn-sound" onClick={() => { if (messages.length) speakText(messages.filter(m => m.role === 'assistant').pop()?.text || '') }} title="Leer última respuesta">🔊</button>
+            <button className="sigfarita-btn-sound" onClick={() => { if (messages.length) speakText(messages.filter(m => m.role === 'assistant').pop()?.text || '') }} title="Leer última respuesta"><Volume2 size={14}/></button>
             <button className="sigfarita-btn-sound" onClick={() => { window.speechSynthesis.cancel(); setMuted(!muted) }} title={muted ? 'Activar voz' : 'Silenciar'}>
-              {muted ? '🔇' : '🔈'}
+              {muted ? <VolumeX size={14}/> : <Volume2 size={14}/>}
             </button>
           </div>
           <div className="sigfarita-input-row">
@@ -969,8 +985,8 @@ function Jefatura() {
               onKeyDown={handleKeyDown}
               disabled={thinking}
             />
-            <button className="sigfarita-btn sigfarita-btn-send" onClick={handleAsk} disabled={thinking}>▶</button>
-            <button className={`sigfarita-btn sigfarita-btn-mic${recording ? ' recording' : ''}`} onClick={toggleMic}>🎙️</button>
+            <button className="sigfarita-btn sigfarita-btn-send" onClick={handleAsk} disabled={thinking}><Send size={16}/></button>
+            <button className={`sigfarita-btn sigfarita-btn-mic${recording ? ' recording' : ''}`} onClick={toggleMic}>{recording ? <MicOff size={16}/> : <Mic size={16}/>}</button>
           </div>
         </div>
       </div>
