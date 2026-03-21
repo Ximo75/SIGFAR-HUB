@@ -34,6 +34,7 @@ function Nav() {
         <Link to="/pacientes">Pacientes</Link>
         <Link to="/emprm">EM/PRM</Link>
         <Link to="/integraciones">Integraciones</Link>
+        <Link to="/jefatura">👩‍⚕️ Jefatura</Link>
       </div>
     </nav>
   )
@@ -689,6 +690,268 @@ function Integraciones() {
   )
 }
 
+/* ═══ Jefatura — Cuadro de Mandos ═══ */
+function Jefatura() {
+  const [now, setNow] = React.useState(new Date())
+  const [resumen, setResumen] = React.useState(null)
+  const [gastoServicio, setGastoServicio] = React.useState(null)
+  const [topMeds, setTopMeds] = React.useState(null)
+  const [evolucion, setEvolucion] = React.useState(null)
+  const [showAllMeds, setShowAllMeds] = React.useState(false)
+  const [pregunta, setPregunta] = React.useState('')
+  const [respuesta, setRespuesta] = React.useState('')
+  const [thinking, setThinking] = React.useState(false)
+  const [recording, setRecording] = React.useState(false)
+  const [muted, setMuted] = React.useState(false)
+  const recognitionRef = React.useRef(null)
+
+  React.useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  React.useEffect(() => {
+    const safe = (url, setter) => fetch(API + url).then(r => r.json()).then(setter).catch(() => {})
+    safe('/api/jefatura/resumen', setResumen)
+    safe('/api/jefatura/gasto-servicio', d => setGastoServicio(d?.items || null))
+    safe('/api/jefatura/top-medicamentos', d => setTopMeds(d?.items || null))
+    safe('/api/jefatura/evolucion-mensual', d => setEvolucion(d?.items || null))
+  }, [])
+
+  const fmt = (v) => v != null ? Number(v).toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €' : '—'
+  const fmtN = (v) => v != null ? Number(v).toLocaleString('es-ES') : '—'
+
+  const fechaStr = now.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+  const horaStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+
+  const sig = resumen?.sigfar
+  const gax = resumen?.gestionax
+
+  async function handleAsk() {
+    if (!pregunta.trim()) return
+    setThinking(true)
+    setRespuesta('')
+    try {
+      const r = await fetch(API + '/api/jefatura/sigfarita', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto: pregunta })
+      })
+      const d = await r.json()
+      setRespuesta(d.respuesta || d.detail || 'Sin respuesta')
+      if (!muted && d.respuesta) speakText(d.respuesta)
+    } catch (e) {
+      setRespuesta('Error al conectar con Sigfarita: ' + e.message)
+    }
+    setThinking(false)
+  }
+
+  function speakText(text) {
+    window.speechSynthesis.cancel()
+    const utt = new SpeechSynthesisUtterance(text)
+    const voices = window.speechSynthesis.getVoices()
+    const esVoice = voices.find(v => v.lang.startsWith('es'))
+    if (esVoice) utt.voice = esVoice
+    utt.lang = 'es-ES'
+    utt.rate = 1
+    window.speechSynthesis.speak(utt)
+  }
+
+  function toggleMic() {
+    if (recording) {
+      if (recognitionRef.current) recognitionRef.current.stop()
+      setRecording(false)
+      return
+    }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) { alert('Tu navegador no soporta reconocimiento de voz'); return }
+    const recog = new SpeechRecognition()
+    recog.lang = 'es-ES'
+    recog.interimResults = false
+    recog.onresult = (e) => {
+      const text = e.results[0][0].transcript
+      setPregunta(text)
+    }
+    recog.onend = () => setRecording(false)
+    recog.onerror = () => setRecording(false)
+    recognitionRef.current = recog
+    recog.start()
+    setRecording(true)
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter') handleAsk()
+  }
+
+  // Gasto total for % calculation
+  const gastoTotal = React.useMemo(() => {
+    if (!gastoServicio) return 0
+    return gastoServicio.reduce((sum, r) => sum + (Number(r.gasto) || 0), 0)
+  }, [gastoServicio])
+
+  return (
+    <div>
+      {/* 1. CABECERA */}
+      <div className="jef-header">
+        <div>
+          <h1>Cuadro de Mandos</h1>
+          <p className="jef-sub">Dra. Pilar Blasco Segura · Jefa de Servicio de Farmacia · CHGUV</p>
+          <span className="jef-badge">Sigfarita · Asistente IA activa</span>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div className="jef-clock">{horaStr}</div>
+          <div className="jef-date" style={{ textTransform: 'capitalize' }}>{fechaStr}</div>
+        </div>
+      </div>
+
+      {/* 2. KPIs EJECUTIVOS */}
+      <div className="jef-kpis">
+        {[
+          { label: 'Pacientes activos', value: sig?.pacientes_activos, color: '#0f766e' },
+          { label: 'Gasto mes actual', value: gax?.gasto_mes_actual, color: '#1e40af', isMoney: true },
+          { label: 'EM/PRM pendientes', value: sig?.emprm_pendientes, color: '#dc2626' },
+          { label: 'EM/PRM críticos', value: sig?.emprm_criticos, color: '#991b1b' },
+          { label: 'Validaciones mes', value: sig?.validaciones_mes, color: '#059669' },
+          { label: 'Medicamentos GFT', value: gax?.medicamentos_gft, color: '#7c3aed' },
+        ].map((k, i) => (
+          <div key={i} className="jef-kpi">
+            <div className="jef-kpi-val" style={{ color: k.color }}>
+              {k.isMoney ? fmt(k.value) : <AnimCounter target={k.value} />}
+            </div>
+            <div className="jef-kpi-label">{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* 3. GASTO POR SERVICIO */}
+      <div className="jef-card">
+        <div className="jef-card-hdr">💰 Gasto por servicio clínico</div>
+        <div className="jef-card-body">
+          {gastoServicio ? (
+            <table className="jef-table">
+              <thead><tr><th>Servicio</th><th>Actividad</th><th className="num">Artículos</th><th className="num">Unidades</th><th className="num">Gasto (€)</th><th className="num">% Total</th></tr></thead>
+              <tbody>
+                {gastoServicio.sort((a, b) => (Number(b.gasto) || 0) - (Number(a.gasto) || 0)).map((r, i) => (
+                  <tr key={i}>
+                    <td><strong>{r.servicio || r.centro_actividad || r.descripcion_centro || '—'}</strong></td>
+                    <td>{r.actividad || r.centro_actividad || '—'}</td>
+                    <td className="num">{fmtN(r.articulos || r.articulos_distintos)}</td>
+                    <td className="num">{fmtN(r.unidades || r.total_unidades)}</td>
+                    <td className="num">{fmt(r.gasto || r.total_gasto)}</td>
+                    <td className="num">{gastoTotal ? ((Number(r.gasto || r.total_gasto) / gastoTotal) * 100).toFixed(1) + '%' : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : <div className="jef-warn">⚠️ Datos no disponibles</div>}
+        </div>
+      </div>
+
+      {/* 4. TOP MEDICAMENTOS */}
+      <div className="jef-card">
+        <div className="jef-card-hdr">💊 Top medicamentos por gasto</div>
+        <div className="jef-card-body">
+          {topMeds ? (
+            <>
+              <table className="jef-table">
+                <thead><tr><th>#</th><th>Medicamento</th><th>ATC</th><th className="num">Unidades</th><th className="num">Gasto (€)</th><th className="num">€/unidad</th><th>GFT</th></tr></thead>
+                <tbody>
+                  {(showAllMeds ? topMeds : topMeds.slice(0, 15)).map((m, i) => {
+                    const gft = m.gft || m.estado_gft || null
+                    const gftLower = (gft || '').toLowerCase()
+                    const gftClass = gft == null ? 'jef-gft-fuera' : gftLower.includes('activ') ? 'jef-gft-activo' : gftLower.includes('restringid') ? 'jef-gft-restringido' : gftLower.includes('inactiv') ? 'jef-gft-inactivo' : 'jef-gft-fuera'
+                    const gftLabel = gft == null ? 'Fuera GFT' : gft
+                    const unidades = Number(m.unidades || m.total_unidades) || 0
+                    const gasto = Number(m.gasto || m.total_gasto) || 0
+                    const precioUd = unidades ? (gasto / unidades) : 0
+                    return (
+                      <tr key={i}>
+                        <td>{i + 1}</td>
+                        <td><strong>{m.medicamento || m.descripcion || m.principio_activo || '—'}</strong></td>
+                        <td>{m.atc || m.atc_codigo || '—'}</td>
+                        <td className="num">{fmtN(unidades)}</td>
+                        <td className="num">{fmt(gasto)}</td>
+                        <td className="num">{fmt(precioUd)}</td>
+                        <td><span className={`jef-gft-badge ${gftClass}`}>{gftLabel}</span></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              {topMeds.length > 15 && (
+                <div style={{ textAlign: 'center', marginTop: 10 }}>
+                  <button onClick={() => setShowAllMeds(!showAllMeds)} style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: 8, padding: '6px 20px', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#334155' }}>
+                    {showAllMeds ? 'Mostrar menos' : `Ver todos (${topMeds.length})`}
+                  </button>
+                </div>
+              )}
+            </>
+          ) : <div className="jef-warn">⚠️ Datos no disponibles</div>}
+        </div>
+      </div>
+
+      {/* 5. EVOLUCIÓN MENSUAL */}
+      <div className="jef-card">
+        <div className="jef-card-hdr">📈 Evolución mensual del gasto</div>
+        <div className="jef-card-body">
+          {evolucion ? (
+            <table className="jef-table">
+              <thead><tr><th>Año</th><th>Mes</th><th className="num">Transacciones</th><th className="num">Artículos</th><th className="num">Unidades</th><th className="num">Gasto (€)</th></tr></thead>
+              <tbody>
+                {evolucion.map((r, i) => (
+                  <tr key={i}>
+                    <td>{r.anyo || r.año || r.year || '—'}</td>
+                    <td>{r.mes || r.month || '—'}</td>
+                    <td className="num">{fmtN(r.transacciones || r.total_transacciones)}</td>
+                    <td className="num">{fmtN(r.articulos || r.articulos_distintos)}</td>
+                    <td className="num">{fmtN(r.unidades || r.total_unidades)}</td>
+                    <td className="num">{fmt(r.gasto || r.total_gasto)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : <div className="jef-warn">⚠️ Datos no disponibles</div>}
+        </div>
+      </div>
+
+      {/* 6. SIGFARITA CHAT */}
+      <div className="sigfarita">
+        <h3>🤖 Sigfarita — Asistente IA</h3>
+        <div className="sigfarita-input-row">
+          <input
+            className="sigfarita-input"
+            type="text"
+            placeholder="Pregunta a Sigfarita... (ej: ¿Cuánto gastamos en antifúngicos en UCI?)"
+            value={pregunta}
+            onChange={e => setPregunta(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={thinking}
+          />
+          <button className="sigfarita-btn sigfarita-btn-send" onClick={handleAsk} disabled={thinking}>▶</button>
+          <button className={`sigfarita-btn sigfarita-btn-mic${recording ? ' recording' : ''}`} onClick={toggleMic}>🎙️</button>
+        </div>
+        {(thinking || respuesta) && (
+          <div className="sigfarita-response">
+            {thinking ? (
+              <span className="sigfarita-thinking">Sigfarita está pensando...</span>
+            ) : (
+              <>
+                <Markdown>{respuesta}</Markdown>
+                <div className="sigfarita-sound-row">
+                  <button className="sigfarita-btn-sound" onClick={() => speakText(respuesta)} title="Leer en voz alta">🔊</button>
+                  <button className="sigfarita-btn-sound" onClick={() => { window.speechSynthesis.cancel(); setMuted(!muted) }} title={muted ? 'Activar voz' : 'Silenciar'}>
+                    {muted ? '🔇' : '🔈'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /* ═══ App ═══ */
 function App() {
   return (
@@ -701,6 +964,7 @@ function App() {
           <Route path="/paciente/:id" element={<FichaPaciente />} />
           <Route path="/emprm" element={<EmprmPendientes />} />
           <Route path="/integraciones" element={<Integraciones />} />
+          <Route path="/jefatura" element={<Jefatura />} />
         </Routes>
       </main>
     </BrowserRouter>

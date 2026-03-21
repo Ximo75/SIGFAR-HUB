@@ -235,3 +235,52 @@ a{color:#0f766e;text-decoration:none}
 .sf-hub-ai-tag{font-size:10px;color:#94a3b8;font-weight:500}
 @media(max-width:900px){.sf-hub-stats-row{grid-template-columns:repeat(3,1fr)}.sf-hub-header{flex-direction:column;gap:12px;text-align:center}.sf-hub-clock{text-align:center}}
 @media(max-width:600px){.sf-hub-stats-row{grid-template-columns:repeat(2,1fr)}.sf-hub-ai-grid{grid-template-columns:1fr}}
+
+/* ════════════════════════════════════════════════════════════════
+   Jefatura Dashboard
+   ════════════════════════════════════════════════════════════════ */
+.jef-header{background:linear-gradient(135deg,#1e293b,#334155);border-radius:16px;padding:24px;color:#fff;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center}
+.jef-header h1{font-size:24px;font-weight:800;margin:0 0 4px}
+.jef-header .jef-sub{font-size:13px;opacity:.7;margin:0}
+.jef-header .jef-badge{display:inline-block;font-size:10px;font-weight:700;padding:4px 12px;border-radius:12px;background:rgba(20,184,166,.2);color:#5eead4;border:1px solid rgba(20,184,166,.3);margin-top:8px}
+.jef-header .jef-clock{font-size:32px;font-weight:800;font-variant-numeric:tabular-nums}
+.jef-header .jef-date{font-size:12px;opacity:.6}
+.jef-kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:20px}
+.jef-kpi{background:#fff;border-radius:12px;border:1px solid #e8edf2;padding:16px;text-align:center}
+.jef-kpi:hover{box-shadow:0 4px 12px rgba(0,0,0,.06)}
+.jef-kpi-val{font-size:24px;font-weight:800;letter-spacing:-0.5px}
+.jef-kpi-label{font-size:9px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-top:2px}
+.jef-card{background:#fff;border-radius:14px;border:1px solid #e8edf2;margin-bottom:16px;overflow:hidden}
+.jef-card-hdr{padding:14px 18px;border-bottom:1px solid #f1f5f9;font-size:15px;font-weight:700;color:#0f172a;display:flex;align-items:center;gap:8px}
+.jef-card-body{padding:16px 18px;overflow-x:auto}
+.jef-table{width:100%;border-collapse:collapse;font-size:12px}
+.jef-table th{background:#f1f5f9;padding:8px 12px;text-align:left;font-size:10px;text-transform:uppercase;color:#64748b;letter-spacing:.3px;font-weight:700;position:sticky;top:0}
+.jef-table td{padding:8px 12px;border-bottom:1px solid #f8fafc}
+.jef-table tr:hover{background:#f8fafb}
+.jef-table .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.jef-gft-badge{font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px}
+.jef-gft-activo{background:#d1fae5;color:#065f46}
+.jef-gft-restringido{background:#fef3c7;color:#92400e}
+.jef-gft-inactivo{background:#f3f4f6;color:#6b7280}
+.jef-gft-fuera{background:#fee2e2;color:#991b1b}
+.jef-warn{background:#fffbeb;border:1px solid #fbbf24;border-left:4px solid #f59e0b;border-radius:0 6px 6px 0;padding:10px 14px;font-size:12px;color:#92400e}
+/* Sigfarita */
+.sigfarita{background:linear-gradient(135deg,#0f766e,#14b8a6);border-radius:16px;padding:20px;color:#fff;margin-bottom:20px}
+.sigfarita h3{font-size:16px;font-weight:700;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.sigfarita-input-row{display:flex;gap:8px;margin-bottom:12px}
+.sigfarita-input{flex:1;padding:10px 14px;border-radius:10px;border:none;font-size:13px;color:#0f172a;outline:none}
+.sigfarita-input::placeholder{color:#94a3b8}
+.sigfarita-btn{width:44px;height:44px;border-radius:10px;border:none;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:all .2s}
+.sigfarita-btn-send{background:rgba(255,255,255,.2);color:#fff}
+.sigfarita-btn-send:hover{background:rgba(255,255,255,.3)}
+.sigfarita-btn-mic{background:rgba(255,255,255,.1);color:#fff}
+.sigfarita-btn-mic:hover{background:rgba(255,255,255,.2)}
+.sigfarita-btn-mic.recording{background:#dc2626;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.sigfarita-btn-sound{background:rgba(255,255,255,.1);color:#fff;width:36px;height:36px;border-radius:8px;border:none;cursor:pointer;font-size:14px}
+.sigfarita-response{background:rgba(0,0,0,.15);border-radius:10px;padding:14px;font-size:13px;line-height:1.7;min-height:40px}
+.sigfarita-response p{margin:4px 0}
+.sigfarita-thinking{opacity:.7;font-style:italic}
+.sigfarita-sound-row{display:flex;gap:6px;margin-top:8px}
+@media(max-width:1000px){.jef-kpis{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:600px){.jef-kpis{grid-template-columns:repeat(2,1fr)}.jef-header{flex-direction:column;text-align:center}}
