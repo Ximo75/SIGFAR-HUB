@@ -719,8 +719,11 @@ function Jefatura() {
   const [thinking, setThinking] = React.useState(false)
   const [recording, setRecording] = React.useState(false)
   const [muted, setMuted] = React.useState(false)
+  const [micError, setMicError] = React.useState('')
   const recognitionRef = React.useRef(null)
   const messagesEndRef = React.useRef(null)
+  const sendTimeoutRef = React.useRef(null)
+  const finalTextRef = React.useRef('')
 
   React.useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -792,15 +795,68 @@ function Jefatura() {
     }
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) { alert('Tu navegador no soporta reconocimiento de voz'); return }
+    setMicError('')
+    finalTextRef.current = ''
     const recog = new SpeechRecognition()
     recog.lang = 'es-ES'
-    recog.interimResults = false
+    recog.continuous = false
+    recog.interimResults = true
     recog.onresult = (e) => {
-      const text = e.results[0][0].transcript
-      setPregunta(text)
+      let interim = ''
+      let final = ''
+      for (let i = 0; i < e.results.length; i++) {
+        if (e.results[i].isFinal) {
+          final += e.results[i][0].transcript
+        } else {
+          interim += e.results[i][0].transcript
+        }
+      }
+      if (final) {
+        finalTextRef.current = final
+        setPregunta(final)
+      } else if (interim) {
+        setPregunta(interim)
+      }
     }
-    recog.onend = () => setRecording(false)
-    recog.onerror = () => setRecording(false)
+    recog.onend = () => {
+      setRecording(false)
+      const text = finalTextRef.current.trim()
+      if (text) {
+        if (sendTimeoutRef.current) clearTimeout(sendTimeoutRef.current)
+        sendTimeoutRef.current = setTimeout(() => {
+          // Auto-send: build and send the message directly
+          const ts = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+          setMessages(prev => [...prev, { role: 'user', text, timestamp: ts }])
+          setPregunta('')
+          setThinking(true)
+          fetch(API + '/api/jefatura/sigfarita', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ texto: text })
+          })
+            .then(r => r.json())
+            .then(d => {
+              const resp = d.respuesta || d.detail || 'Sin respuesta'
+              const tsR = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+              setMessages(prev => [...prev, { role: 'assistant', text: resp, timestamp: tsR }])
+              if (!muted && d.respuesta) speakText(d.respuesta)
+              setThinking(false)
+            })
+            .catch(err => {
+              const tsR = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+              setMessages(prev => [...prev, { role: 'assistant', text: 'Error al conectar con Sigfarita: ' + err.message, timestamp: tsR }])
+              setThinking(false)
+            })
+        }, 500)
+      }
+    }
+    recog.onerror = (e) => {
+      setRecording(false)
+      if (e.error === 'no-speech' || e.error === 'audio-capture' || e.error === 'not-allowed') {
+        setMicError('No te he entendido, repite por favor')
+        setTimeout(() => setMicError(''), 3000)
+      }
+    }
     recognitionRef.current = recog
     recog.start()
     setRecording(true)
@@ -988,6 +1044,8 @@ function Jefatura() {
             <button className="sigfarita-btn sigfarita-btn-send" onClick={handleAsk} disabled={thinking}><Send size={16}/></button>
             <button className={`sigfarita-btn sigfarita-btn-mic${recording ? ' recording' : ''}`} onClick={toggleMic}>{recording ? <MicOff size={16}/> : <Mic size={16}/>}</button>
           </div>
+          {recording && <div style={{ fontSize: 10, color: 'rgba(255,255,255,.6)', fontStyle: 'italic', textAlign: 'center' }}>Escuchando...</div>}
+          {micError && <div style={{ fontSize: 10, color: '#fca5a5', textAlign: 'center' }}>{micError}</div>}
         </div>
       </div>
     </div>
