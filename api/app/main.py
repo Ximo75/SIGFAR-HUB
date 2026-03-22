@@ -2048,3 +2048,170 @@ async def propuestas_set_prioridad(body: PropuestaSetPrioridad):
     return {"status": "OK"}
 
 
+# ═══════════════════════════════════════════════════════════════════
+# STACK — Mapa de Arquitectura del ecosistema SIGFAR
+# ═══════════════════════════════════════════════════════════════════
+
+
+async def _stack_test_component(client: httpx.AsyncClient, comp: dict) -> dict:
+    """Prueba conectividad real de un componente del stack."""
+    url = comp.get("url_health") or comp.get("url_base")
+    if not url:
+        return {"ok": None, "latencia_ms": 0, "error": "Sin URL de test"}
+    # Solo testear URLs http/https
+    if not url.startswith("http"):
+        return {"ok": None, "latencia_ms": 0, "error": "URL no testeable"}
+    try:
+        import time
+        t0 = time.time()
+        resp = await client.get(url, timeout=10.0, follow_redirects=True)
+        latencia = int((time.time() - t0) * 1000)
+        return {"ok": resp.status_code < 400, "latencia_ms": latencia,
+                "status_code": resp.status_code}
+    except Exception as e:
+        return {"ok": False, "latencia_ms": 0, "error": str(e)[:200]}
+
+
+@app.get("/api/stack/stats", tags=["Stack"])
+async def stack_stats():
+    """Estadísticas del stack de componentes"""
+    async with async_session() as session:
+        total = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_stack_components"))).scalar()
+        operativos = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_stack_components WHERE estado = 'OPERATIVO'"))).scalar()
+        degradados = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_stack_components WHERE estado = 'DEGRADADO'"))).scalar()
+        caidos = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_stack_components WHERE estado = 'CAIDO'"))).scalar()
+        pendientes = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_stack_components WHERE estado = 'PENDIENTE'"))).scalar()
+        por_grupo = await session.execute(
+            text("SELECT grupo, COUNT(*) n FROM hgu_stack_components GROUP BY grupo ORDER BY grupo"))
+        grupos = {r["grupo"]: r["n"] for r in por_grupo.mappings().all()}
+        por_tipo = await session.execute(
+            text("SELECT tipo, COUNT(*) n FROM hgu_stack_components GROUP BY tipo ORDER BY n DESC"))
+        tipos = {r["tipo"]: r["n"] for r in por_tipo.mappings().all()}
+        test_ok = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_stack_components WHERE ultimo_check_ok = TRUE"))).scalar()
+        test_fail = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_stack_components WHERE ultimo_check_ok = FALSE"))).scalar()
+        return {
+            "total": total, "operativos": operativos, "degradados": degradados,
+            "caidos": caidos, "pendientes": pendientes,
+            "por_grupo": grupos, "por_tipo": tipos,
+            "test_ok": test_ok, "test_fail": test_fail
+        }
+
+
+@app.get("/api/stack/components", tags=["Stack"])
+async def stack_components(grupo: str | None = None, estado: str | None = None,
+                           tipo: str | None = None):
+    """Lista todos los componentes del stack con filtros opcionales"""
+    conds = ["visible = TRUE"]
+    params = {}
+    if grupo:
+        conds.append("grupo = :grupo")
+        params["grupo"] = grupo
+    if estado:
+        conds.append("estado = :estado")
+        params["estado"] = estado
+    if tipo:
+        conds.append("tipo = :tipo")
+        params["tipo"] = tipo
+    where = "WHERE " + " AND ".join(conds)
+    sql = f"SELECT * FROM hgu_stack_components {where} ORDER BY orden_visual, nombre"
+    async with async_session() as session:
+        result = await session.execute(text(sql), params)
+        return [dict(r) for r in result.mappings().all()]
+
+
+@app.get("/api/stack/components/{comp_id}", tags=["Stack"])
+async def stack_component_detail(comp_id: int):
+    """Detalle de un componente del stack"""
+    async with async_session() as session:
+        result = await session.execute(
+            text("SELECT * FROM hgu_stack_components WHERE id = :id"), {"id": comp_id})
+        row = result.mappings().first()
+        if not row:
+            raise HTTPException(404, "Componente no encontrado")
+        return dict(row)
+
+
+@app.post("/api/stack/test/{comp_id}", tags=["Stack"])
+async def stack_test_component(comp_id: int):
+    """Testear conectividad de un componente en tiempo real"""
+    async with async_session() as session:
+        result = await session.execute(
+            text("SELECT * FROM hgu_stack_components WHERE id = :id"), {"id": comp_id})
+        row = result.mappings().first()
+        if not row:
+            raise HTTPException(404, "Componente no encontrado")
+        comp_data = dict(row)
+
+    async with httpx.AsyncClient() as client:
+        test_result = await _stack_test_component(client, comp_data)
+
+    # Actualizar solo si el test devolvió un resultado real
+    if test_result["ok"] is not None:
+        new_estado = "OPERATIVO" if test_result["ok"] else "DEGRADADO"
+        async with async_session() as session:
+            await session.execute(text("""
+                UPDATE hgu_stack_components
+                SET ultimo_check = NOW(),
+                    ultimo_check_ok = :ok,
+                    latencia_ms = :lat,
+                    estado = :estado
+                WHERE id = :id
+            """), {"ok": test_result["ok"], "lat": test_result["latencia_ms"],
+                   "estado": new_estado, "id": comp_id})
+            await session.commit()
+
+    return {
+        "comp_id": comp_id, "nombre": comp_data["nombre"],
+        **test_result
+    }
+
+
+@app.post("/api/stack/test-all", tags=["Stack"])
+async def stack_test_all():
+    """Testear conectividad de TODOS los componentes con URL testeable"""
+    async with async_session() as session:
+        result = await session.execute(
+            text("SELECT * FROM hgu_stack_components WHERE visible = TRUE ORDER BY orden_visual"))
+        components = [dict(r) for r in result.mappings().all()]
+
+    results = []
+    async with httpx.AsyncClient() as client:
+        for comp in components:
+            test_result = await _stack_test_component(client, comp)
+            if test_result["ok"] is not None:
+                new_estado = "OPERATIVO" if test_result["ok"] else "DEGRADADO"
+                async with async_session() as session:
+                    await session.execute(text("""
+                        UPDATE hgu_stack_components
+                        SET ultimo_check = NOW(),
+                            ultimo_check_ok = :ok,
+                            latencia_ms = :lat,
+                            estado = :estado
+                        WHERE id = :id
+                    """), {"ok": test_result["ok"], "lat": test_result["latencia_ms"],
+                           "estado": new_estado, "id": comp["id"]})
+                    await session.commit()
+            results.append({
+                "comp_id": comp["id"], "nombre": comp["nombre"],
+                "grupo": comp["grupo"],
+                **test_result
+            })
+            await asyncio.sleep(0.3)
+
+    ok_count = sum(1 for r in results if r.get("ok") is True)
+    fail_count = sum(1 for r in results if r.get("ok") is False)
+    skip_count = sum(1 for r in results if r.get("ok") is None)
+    return {
+        "total": len(results), "ok": ok_count,
+        "fail": fail_count, "sin_url": skip_count,
+        "results": results
+    }
+
+

@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { BrowserRouter, Routes, Route, Link, useParams } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Link, Navigate, useParams } from 'react-router-dom'
 import Markdown from 'react-markdown'
 import { Activity, AlertCircle, AlertTriangle, Archive, BarChart3, BookOpen, Brain, BrainCircuit, Building2, Calculator, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, Clipboard, Clock, Cpu, Database, ExternalLink, FileText, Filter, FlaskConical, Gauge, GitBranch, Globe, GraduationCap, Heart, HeartPulse, Home, Hourglass, Hospital, Info, Layers, LayoutDashboard, Lightbulb, Mic, MicOff, MonitorSmartphone, Network, Pill, Plug, Presentation, Radar, RefreshCw, Rocket, Search, Send, Server, Shield, ShieldAlert, Sparkles, Star, Stethoscope, StickyNote, Tags, Target, TrendingDown, TrendingUp, Truck, Users, Volume2, VolumeX, Wallet, Wifi, WifiOff, Wrench, X, XCircle, Zap } from 'lucide-react'
 import './style.css'
@@ -31,13 +31,14 @@ function Nav() {
         <span className="sf-nav-badge">CHGUV</span>
       </div>
       <div className="sf-nav-links">
+        <Link to="/stack"><span className="nav-icon"><Layers size={16}/></span>Stack</Link>
         <Link to="/radar"><span className="nav-icon"><Radar size={16}/></span>Radar IA</Link>
         <Link to="/apis"><span className="nav-icon"><Plug size={16}/></span>APIs</Link>
         <Link to="/ml"><span className="nav-icon"><BrainCircuit size={16}/></span>Algoritmos ML</Link>
         <Link to="/propuestas"><span className="nav-icon"><Lightbulb size={16}/></span>Propuestas</Link>
         <Link to="/integraciones"><span className="nav-icon"><Network size={16}/></span>Integraciones</Link>
         <Link to="/jefatura"><span className="nav-icon"><Building2 size={16}/></span>Dirección Servicio Farmacia</Link>
-        <Link to="/"><span className="nav-icon"><LayoutDashboard size={16}/></span>Dashboard</Link>
+        <Link to="/dashboard"><span className="nav-icon"><LayoutDashboard size={16}/></span>Dashboard</Link>
         <Link to="/pacientes"><span className="nav-icon"><Users size={16}/></span>Pacientes</Link>
         <Link to="/emprm"><span className="nav-icon"><ShieldAlert size={16}/></span>EM/PRM</Link>
       </div>
@@ -2493,6 +2494,235 @@ function PropuestasEstrategicas() {
   )
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   STACK — Mapa de Arquitectura del ecosistema SIGFAR
+   ═══════════════════════════════════════════════════════════════════ */
+
+const STACK_ICON_MAP = {
+  Database, Server, MonitorSmartphone, Pill, Wallet, Shield, FlaskConical,
+  Target, Clipboard, Zap, Sparkles, Cpu, Brain, BookOpen, ShieldAlert,
+  AlertTriangle, Tags, Calculator, Archive, Stethoscope, Hospital, GitBranch,
+  Layers, Globe, ExternalLink, Activity, Plug, Gauge
+}
+const STACK_GRUPO_LABELS = {
+  HUB_DOCKER: 'Hub Docker', APEX_APPS: 'Aplicaciones APEX',
+  IA_MODELOS: 'Modelos IA', APIS_EXTERNAS: 'APIs Externas',
+  HOSPITAL_SISTEMAS: 'Sistemas Hospital', REPO: 'Repositorios'
+}
+const STACK_GRUPO_ICONS = {
+  HUB_DOCKER: Layers, APEX_APPS: Building2, IA_MODELOS: Brain,
+  APIS_EXTERNAS: Plug, HOSPITAL_SISTEMAS: Hospital, REPO: GitBranch
+}
+const STACK_GRUPO_COLORS = {
+  HUB_DOCKER: '#0f766e', APEX_APPS: '#f59e0b', IA_MODELOS: '#8b5cf6',
+  APIS_EXTERNAS: '#2563eb', HOSPITAL_SISTEMAS: '#64748b', REPO: '#334155'
+}
+const STACK_ESTADO_COLORS = {
+  OPERATIVO: '#16a34a', DEGRADADO: '#f59e0b', CAIDO: '#dc2626',
+  PENDIENTE: '#94a3b8', NO_APLICA: '#cbd5e1'
+}
+const STACK_GRUPO_ORDER = ['HUB_DOCKER','IA_MODELOS','APEX_APPS','APIS_EXTERNAS','HOSPITAL_SISTEMAS','REPO']
+
+function StackMap() {
+  const [components, setComponents] = React.useState([])
+  const [stats, setStats] = React.useState(null)
+  const [loading, setLoading] = React.useState(true)
+  const [testing, setTesting] = React.useState(false)
+  const [testResults, setTestResults] = React.useState(null)
+  const [selected, setSelected] = React.useState(null)
+
+  const loadData = () => {
+    setLoading(true)
+    Promise.all([
+      fetch(API + '/api/stack/components').then(r => r.json()),
+      fetch(API + '/api/stack/stats').then(r => r.json())
+    ]).then(([comps, st]) => {
+      setComponents(comps)
+      setStats(st)
+      setLoading(false)
+    }).catch(() => setLoading(false))
+  }
+  React.useEffect(loadData, [])
+
+  const testAll = async () => {
+    setTesting(true)
+    setTestResults(null)
+    try {
+      const r = await fetch(API + '/api/stack/test-all', { method: 'POST' })
+      const data = await r.json()
+      setTestResults(data)
+      loadData()
+    } catch (e) { console.error(e) }
+    setTesting(false)
+  }
+
+  const testOne = async (id) => {
+    try {
+      const r = await fetch(API + `/api/stack/test/${id}`, { method: 'POST' })
+      const data = await r.json()
+      setComponents(prev => prev.map(c => c.id === id ? {
+        ...c, ultimo_check_ok: data.ok, latencia_ms: data.latencia_ms,
+        estado: data.ok === true ? 'OPERATIVO' : data.ok === false ? 'DEGRADADO' : c.estado
+      } : c))
+    } catch (e) { console.error(e) }
+  }
+
+  if (loading) return <div className="sf-loading">Cargando arquitectura...</div>
+
+  const byGrupo = {}
+  STACK_GRUPO_ORDER.forEach(g => { byGrupo[g] = [] })
+  components.forEach(c => {
+    if (!byGrupo[c.grupo]) byGrupo[c.grupo] = []
+    byGrupo[c.grupo].push(c)
+  })
+
+  const IconComp = (name) => STACK_ICON_MAP[name] || Circle
+
+  const renderCompCard = (c) => {
+    const Ic = IconComp(c.icono)
+    const stColor = STACK_ESTADO_COLORS[c.estado] || '#94a3b8'
+    const isSelected = selected === c.id
+    return (
+      <div key={c.id}
+        className={`stack-comp ${isSelected ? 'stack-comp-selected' : ''}`}
+        style={{ borderLeftColor: c.color || '#e8edf2' }}
+        onClick={() => setSelected(isSelected ? null : c.id)}>
+        <div className="stack-comp-top">
+          <div className="stack-comp-icon" style={{ background: c.color || '#6366f1' }}>
+            <Ic size={16} color="#fff" />
+          </div>
+          <div className="stack-comp-info">
+            <div className="stack-comp-name">{c.nombre_corto || c.nombre}</div>
+            <div className="stack-comp-tech">{c.tecnologia}{c.version ? ` ${c.version}` : ''}</div>
+          </div>
+          <div className="stack-comp-status" style={{ background: stColor }}
+            title={c.estado} />
+        </div>
+        {isSelected && (
+          <div className="stack-comp-detail">
+            <p style={{fontSize:12,color:'#334155',lineHeight:1.5,margin:'6px 0'}}>{c.descripcion}</p>
+            {c.puerto && <div className="stack-comp-meta"><Server size={11}/> Puerto: {c.puerto}</div>}
+            {c.conexiones && <div className="stack-comp-meta"><Network size={11}/> Conexiones: {c.conexiones}</div>}
+            {c.depende_de && <div className="stack-comp-meta"><GitBranch size={11}/> Depende de: {c.depende_de}</div>}
+            {c.ultimo_check_ok !== null && (
+              <div className="stack-comp-meta">
+                {c.ultimo_check_ok
+                  ? <span className="test-ok"><CheckCircle2 size={11}/> OK {c.latencia_ms ? `(${c.latencia_ms}ms)` : ''}</span>
+                  : <span className="test-fail"><XCircle size={11}/> Error</span>}
+              </div>
+            )}
+            {(c.url_base || c.url_health) && (
+              <div style={{marginTop:6,display:'flex',gap:6,flexWrap:'wrap'}}>
+                <button className="stack-test-btn" onClick={e => { e.stopPropagation(); testOne(c.id) }}>
+                  <Activity size={12}/> Test
+                </button>
+                {c.url_base && c.url_base.startsWith('http') && (
+                  <a href={c.url_base} target="_blank" rel="noreferrer" className="stack-link-btn"
+                    onClick={e => e.stopPropagation()}>
+                    <ExternalLink size={12}/> URL
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="stack-page">
+      <div className="stack-header">
+        <div>
+          <h1 style={{fontSize:24,fontWeight:800,margin:0}}>Stack SIGFAR Hub</h1>
+          <p style={{fontSize:14,opacity:.8,margin:'4px 0 0'}}>Mapa de arquitectura del ecosistema</p>
+          <div className="live-badge" style={{marginTop:8}}>
+            <span className="live-dot" /> {components.length} componentes
+          </div>
+        </div>
+        <button className="apis-btn-test-all" onClick={testAll} disabled={testing}>
+          {testing ? <><span className="radar-spinner"/> Testeando...</> : <><Activity size={16}/> Test All</>}
+        </button>
+      </div>
+
+      {/* KPIs */}
+      {stats && (
+        <div className="stack-kpis">
+          <div className="stack-kpi">
+            <span className="stack-kpi-val" style={{color:'#0f172a'}}>{stats.total}</span>
+            <span className="stack-kpi-label">Total</span>
+          </div>
+          <div className="stack-kpi">
+            <span className="stack-kpi-val" style={{color:'#16a34a'}}>{stats.operativos}</span>
+            <span className="stack-kpi-label">Operativos</span>
+          </div>
+          <div className="stack-kpi">
+            <span className="stack-kpi-val" style={{color:'#f59e0b'}}>{stats.degradados}</span>
+            <span className="stack-kpi-label">Degradados</span>
+          </div>
+          <div className="stack-kpi">
+            <span className="stack-kpi-val" style={{color:'#dc2626'}}>{stats.caidos}</span>
+            <span className="stack-kpi-label">Caidos</span>
+          </div>
+          <div className="stack-kpi">
+            <span className="stack-kpi-val" style={{color:'#94a3b8'}}>{stats.pendientes}</span>
+            <span className="stack-kpi-label">Pendientes</span>
+          </div>
+          {stats.test_ok > 0 && (
+            <div className="stack-kpi">
+              <span className="stack-kpi-val" style={{color:'#16a34a'}}>{stats.test_ok}</span>
+              <span className="stack-kpi-label">Test OK</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Test results banner */}
+      {testResults && (
+        <div className={`radar-scan-result ${testResults.fail === 0 ? 'ok' : 'err'}`}>
+          <Activity size={16}/>
+          Test completado: {testResults.ok} OK, {testResults.fail} fallidos, {testResults.sin_url} sin URL
+        </div>
+      )}
+
+      {/* Architecture diagram */}
+      <div className="stack-diagram">
+        {STACK_GRUPO_ORDER.map(grupo => {
+          const comps = byGrupo[grupo] || []
+          if (!comps.length) return null
+          const GrupoIcon = STACK_GRUPO_ICONS[grupo] || Circle
+          const grupoColor = STACK_GRUPO_COLORS[grupo]
+          const operativos = comps.filter(c => c.estado === 'OPERATIVO').length
+          return (
+            <div key={grupo} className={`stack-group stack-group-${grupo.toLowerCase()}`}>
+              <div className="stack-group-header" style={{ borderLeftColor: grupoColor }}>
+                <GrupoIcon size={18} color={grupoColor} />
+                <span className="stack-group-title">{STACK_GRUPO_LABELS[grupo]}</span>
+                <span className="stack-group-count" style={{ color: grupoColor }}>
+                  {operativos}/{comps.length}
+                </span>
+              </div>
+              <div className="stack-group-grid">
+                {comps.map(renderCompCard)}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {/* Legend */}
+      <div className="stack-legend">
+        {Object.entries(STACK_ESTADO_COLORS).map(([k,v]) => (
+          <div key={k} className="stack-legend-item">
+            <span className="stack-legend-dot" style={{ background: v }} />
+            {k.charAt(0) + k.slice(1).toLowerCase().replace('_',' ')}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ═══ App ═══ */
 function App() {
   return (
@@ -2500,7 +2730,9 @@ function App() {
       <Nav />
       <main className="sf-main">
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<Navigate to="/stack" replace />} />
+          <Route path="/stack" element={<StackMap />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/pacientes" element={<Pacientes />} />
           <Route path="/paciente/:id" element={<FichaPaciente />} />
           <Route path="/emprm" element={<EmprmPendientes />} />
