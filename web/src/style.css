@@ -311,8 +311,8 @@ a{color:#0f766e;text-decoration:none}
 /* ════════════════════════════════════════════════════════════════
    SHARED: Radar IA + APIs
    ════════════════════════════════════════════════════════════════ */
-.radar-page,.apis-page,.ml-page{max-width:1200px;margin:0 auto;overflow-x:hidden}
-.radar-header,.apis-header,.ml-header{background:linear-gradient(135deg,#1a3a2a 0%,#1b4332 60%,#2d6a4f 100%);color:#fff;padding:24px 28px;border-radius:16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px}
+.radar-page,.apis-page,.ml-page,.propuestas-page{max-width:1200px;margin:0 auto;overflow-x:hidden}
+.radar-header,.apis-header,.ml-header,.propuestas-header{background:linear-gradient(135deg,#1a3a2a 0%,#1b4332 60%,#2d6a4f 100%);color:#fff;padding:24px 28px;border-radius:16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px}
 .live-badge{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;padding:4px 12px;border-radius:12px;background:rgba(255,255,255,.1);color:#95d5b2;border:1px solid rgba(149,213,178,.3)}
 .live-dot{width:8px;height:8px;border-radius:50%;background:#4ade80;display:inline-block;animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(74,222,128,.6)}50%{opacity:.4;box-shadow:0 0 0 6px rgba(74,222,128,0)}}
@@ -363,9 +363,9 @@ a{color:#0f766e;text-decoration:none}
 .radar-empty p{margin:0;font-size:14px}
 
 /* ═══ 3-COLUMN GRID ═══ */
-.radar-grid,.apis-grid,.ml-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;width:100%}
-@media(max-width:1024px){.radar-grid,.apis-grid,.ml-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:640px){.radar-grid,.apis-grid,.ml-grid{grid-template-columns:minmax(0,1fr)}}
+.radar-grid,.apis-grid,.ml-grid,.propuestas-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;width:100%}
+@media(max-width:1024px){.radar-grid,.apis-grid,.ml-grid,.propuestas-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:640px){.radar-grid,.apis-grid,.ml-grid,.propuestas-grid{grid-template-columns:minmax(0,1fr)}}
 
 /* ════════════════════════════════════════════════════════════════
    RADAR IA Cards
@@ -483,6 +483,56 @@ a{color:#0f766e;text-decoration:none}
 .ml-mapa-algo{background:#fff;border-radius:8px;border:1px solid #e8edf2;border-left:3px solid;padding:10px 12px}
 .ml-mapa-algo:hover{box-shadow:0 2px 8px rgba(0,0,0,.05)}
 
+/* Propuestas Estratégicas */
+.propuesta-card{background:#fff;border-radius:14px;border:1px solid #e8edf2;padding:16px;display:flex;flex-direction:column;gap:6px;transition:box-shadow .2s,border-color .2s;min-width:0;overflow:hidden;border-left:4px solid #e8edf2}
+.propuesta-card:hover{box-shadow:0 4px 16px rgba(0,0,0,.07);border-color:#a7f3d0}
+.eje-clinico{border-left-color:#ef4444} .eje-economico{border-left-color:#f59e0b}
+.eje-logistico{border-left-color:#3b82f6} .eje-tecnico{border-left-color:#8b5cf6}
+.eje-directivo{border-left-color:#06b6d4} .eje-formacion{border-left-color:#10b981}
+.prop-generar-btn{display:flex;align-items:center;gap:8px;padding:10px 24px;border-radius:10px;border:none;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;box-shadow:0 2px 8px rgba(245,158,11,.3)}
+.prop-generar-btn:hover{box-shadow:0 4px 16px rgba(245,158,11,.4);transform:translateY(-1px)}
+.prop-generar-btn:disabled{opacity:.6;cursor:wait}
+.prop-origen-ia{font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px;background:#fef3c7;color:#92400e;display:inline-flex;align-items:center;gap:3px}
+.prop-origen-radar{font-size:10px;font-weight:700;padding:2px 8px;border-radius:5px;background:#dbeafe;color:#1e40af;display:inline-flex;align-items:center;gap:3px}
+.prop-preview{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;font-size:11px;color:#334155;line-height:1.5;margin:4px 0}
+.prop-preview code{font-family:'Plus Jakarta Sans',monospace;font-size:11px;white-space:pre-wrap;word-break:break-word}
+.prop-collapse{margin:4px 0}
+.prop-collapse-btn{background:none;border:none;font-size:12px;font-weight:600;color:#2d6a4f;cursor:pointer;display:flex;align-items:center;gap:4px;padding:4px 0}
+.prop-collapse-btn:hover{color:#1a3a2a}
+.prop-collapse-content{font-size:12px;color:#475569;line-height:1.5;padding:8px 0 4px 18px;border-left:2px solid #d1fae5}
+.prop-links{display:flex;flex-wrap:wrap;gap:4px;align-items:center;font-size:11px;color:#64748b;margin:2px 0}
+.prop-link-badge{font-size:10px;padding:2px 8px;border-radius:4px;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;text-decoration:none;font-weight:600;transition:.2s}
+.prop-link-badge:hover{background:#d1fae5;border-color:#86efac}
+.prop-link-ml{background:#f5f3ff;color:#5b21b6;border-color:#ddd6fe}
+.prop-link-ml:hover{background:#ede9fe;border-color:#c4b5fd}
+.prop-datos{font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px}
+.prop-estado-select{font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid #e8edf2;background:#fff;cursor:pointer;font-weight:600}
+.prop-eje-group{margin-bottom:24px}
+.prop-eje-header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:#f8fafc;border-radius:10px;border-left:4px solid;margin-bottom:12px;flex-wrap:wrap}
+.prop-eje-progress{flex:1;min-width:80px;max-width:200px;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden}
+.prop-eje-bar{height:100%;border-radius:3px;transition:width 1s ease}
+.prop-ejes-section{padding:8px 0}
+
+/* Matriz impacto/esfuerzo */
+.prop-matriz-section{padding:8px 0}
+.matriz-container{position:relative;width:100%;aspect-ratio:1.5;background:#fff;border:1px solid #e0ddd5;border-radius:14px;overflow:hidden}
+.matriz-quadrants{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;width:100%;height:100%;position:absolute;inset:0}
+.matriz-q{display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:rgba(0,0,0,.12)}
+.matriz-q.quick-win{background:rgba(22,163,74,.06)}
+.matriz-q.strategic{background:rgba(37,99,235,.04)}
+.matriz-q.minor{background:rgba(148,163,184,.04)}
+.matriz-q.avoid{background:rgba(220,38,38,.04)}
+.matriz-labels{position:absolute;z-index:2;pointer-events:none}
+.matriz-label-y{position:absolute;left:8px;top:50%;transform:rotate(-90deg) translateX(50%);font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px}
+.matriz-label-x{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px}
+.matriz-punto{position:absolute;width:14px;height:14px;border-radius:50%;cursor:pointer;transition:transform .2s;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.2);z-index:3;transform:translate(-50%,-50%)}
+.matriz-punto:hover{transform:translate(-50%,-50%) scale(1.8);z-index:10}
+.matriz-tooltip{position:absolute;z-index:20;background:#1e293b;color:#fff;padding:8px 12px;border-radius:8px;font-size:11px;line-height:1.4;pointer-events:none;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+.matriz-tooltip strong{display:block;margin-bottom:2px;font-size:12px}
+.matriz-legend{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px;justify-content:center}
+.matriz-legend-item{display:flex;align-items:center;gap:4px;font-size:11px;color:#64748b}
+.matriz-legend-dot{width:10px;height:10px;border-radius:50%;display:inline-block}
+
 /* Responsive */
-@media(max-width:900px){.radar-header,.apis-header,.ml-header{flex-direction:column;text-align:center}.radar-stats-cards{grid-template-columns:repeat(2,1fr)}.apis-stats-cards{grid-template-columns:repeat(3,1fr)}.radar-bar-label{width:100px;font-size:11px}}
+@media(max-width:900px){.radar-header,.apis-header,.ml-header,.propuestas-header{flex-direction:column;text-align:center}.radar-stats-cards{grid-template-columns:repeat(2,1fr)}.apis-stats-cards{grid-template-columns:repeat(3,1fr)}.radar-bar-label{width:100px;font-size:11px}}
 @media(max-width:600px){.radar-stats-cards,.apis-stats-cards{grid-template-columns:repeat(2,1fr)}.radar-filters{flex-direction:column}.radar-search-wrap{width:100%}}

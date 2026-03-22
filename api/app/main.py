@@ -1662,3 +1662,389 @@ async def ml_set_prioridad(body: MlSetPrioridad):
     return {"status": "OK"}
 
 
+# ═══════════════════════════════════════════════════════════════════
+# PROPUESTAS ESTRATÉGICAS — Generador inteligente de propuestas
+# ═══════════════════════════════════════════════════════════════════
+
+# --- Modelos Pydantic Propuestas ---
+
+class PropuestaToggleFav(BaseModel):
+    propuesta_id: int
+
+class PropuestaSetNota(BaseModel):
+    propuesta_id: int
+    nota: str
+
+class PropuestaSetPrioridad(BaseModel):
+    propuesta_id: int
+    prioridad: str
+
+class PropuestaCambiarEstado(BaseModel):
+    id: int
+    estado: str
+
+
+# --- Prompt para enriquecimiento IA de propuestas ---
+
+PROPUESTAS_SYSTEM_PROMPT = """Eres un consultor estratégico experto en innovación farmacéutica hospitalaria e inteligencia artificial.
+Dada esta propuesta estratégica, genera un plan de implementación detallado para SIGFAR Hub.
+Responde SOLO un JSON válido (sin markdown, sin backticks) con esta estructura:
+{"plan": "Plan detallado de 5-8 frases: fases de desarrollo, APIs y endpoints necesarios, modelo de datos, algoritmos ML a usar, interfaz propuesta, métricas de éxito, riesgos y mitigación, estimación de tiempo. Sé muy específico con el stack: FastAPI + PostgreSQL + React + Groq."}
+
+Contexto SIGFAR Hub: plataforma multiagente IA para farmacia hospitalaria CHGUV. Stack: FastAPI + PostgreSQL + React. Módulos APEX: P15 (Dashboard paciente), P36 (Nutrición Artificial, 7 agentes), P37 (NPD domiciliaria), P40 (Scoring complejidad), P42 (Farmacocinética MAP Bayesiano), P43 (PROA 6 agentes). Datos: 422 pacientes activos, 2M registros consumos GestionAX, 2.692 medicamentos GFT. Sistemas hospital: Kardex, armarios estupefacientes, PYXIS, Versia (NP), ExactaMix, ChemoMaker, ICCA (UCI), OMA (planta), Hosix (HCE)."""
+
+PROPUESTAS_GENERAR_PROMPT = """Eres un consultor estratégico experto en innovación farmacéutica hospitalaria e inteligencia artificial. Dado el contexto del Hospital General Universitario de Valencia, genera exactamente 5 propuestas estratégicas NUEVAS en formato JSON.
+
+Contexto:
+- Novedades recientes del Radar IA: {radar}
+- APIs disponibles: {apis}
+- Algoritmos ML catalogados: {ml}
+- Datos reales hospital: 422 pacientes activos, 2M registros consumos, 2.692 medicamentos GFT
+- Sistemas hospitalarios: Kardex, armarios estupefacientes, PYXIS, Versia (NP), ExactaMix (robots NP), ChemoMaker (robots quimio), ICCA (UCI), OMA (planta), Hosix (HCE)
+- Propuestas YA existentes (NO repetir): {existentes}
+
+Responde SOLO un JSON válido (sin markdown, sin backticks):
+{{"propuestas": [{{"titulo": "...", "descripcion": "2-3 frases", "eje": "CLINICO|ECONOMICO|LOGISTICO|TECNICO|DIRECTIVO|FORMACION", "impacto": "MUY_ALTO|ALTO|MEDIO|BAJO", "preview_descripcion": "mini-descripción visual", "por_que_hub": "por qué APEX no puede", "apis_necesarias": "api1, api2", "ml_recomendado": "algoritmo1, algoritmo2", "datos_cruza": "qué datos necesita", "tiempo_estimado": "X semanas", "esfuerzo": 0-100, "impacto_score": 0-100, "demo_target": "para quién", "tags": "tag1,tag2"}}]}}
+
+Prioriza propuestas que: 1) crucen datos de SIGFAR+GestionAX (imposible en APEX), 2) usen APIs ya conectadas, 3) tengan impacto medible, 4) sean demostrables para Substrate AI."""
+
+
+# --- Endpoints Propuestas ---
+
+PROPUESTAS_ESTADOS_VALIDOS = ('PROPUESTA', 'EN_ANALISIS', 'EN_DESARROLLO', 'PILOTO', 'PRODUCCION', 'DESCARTADA', 'GENERADA_IA')
+PROPUESTAS_IMPACTO_MAP = {'MUY_ALTO': 4, 'ALTO': 3, 'MEDIO': 2, 'BAJO': 1}
+
+
+@app.get("/api/propuestas/stats", tags=["Propuestas"])
+async def propuestas_stats():
+    """Estadísticas de propuestas estratégicas"""
+    async with async_session() as session:
+        r = await session.execute(text("""
+            SELECT
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE estado = 'EN_DESARROLLO') as en_desarrollo,
+                COUNT(*) FILTER (WHERE estado = 'EN_ANALISIS') as en_analisis,
+                COUNT(*) FILTER (WHERE estado = 'PILOTO') as piloto,
+                COUNT(*) FILTER (WHERE estado = 'PRODUCCION') as produccion,
+                COUNT(*) FILTER (WHERE estado = 'PROPUESTA') as propuestas,
+                COUNT(*) FILTER (WHERE estado = 'GENERADA_IA') as generadas_ia,
+                COUNT(*) FILTER (WHERE favorito = true) as favoritos
+            FROM hgu_propuestas_estrategicas WHERE estado != 'DESCARTADA'
+        """))
+        stats = dict(r.mappings().first())
+
+        r2 = await session.execute(text("""
+            SELECT eje, COUNT(*) as n
+            FROM hgu_propuestas_estrategicas WHERE estado != 'DESCARTADA'
+            GROUP BY eje ORDER BY n DESC
+        """))
+        stats["por_eje"] = [dict(row) for row in r2.mappings().all()]
+
+        r3 = await session.execute(text("""
+            SELECT estado, COUNT(*) as n
+            FROM hgu_propuestas_estrategicas
+            GROUP BY estado ORDER BY n DESC
+        """))
+        stats["por_estado"] = [dict(row) for row in r3.mappings().all()]
+
+        r4 = await session.execute(text("""
+            SELECT impacto, COUNT(*) as n
+            FROM hgu_propuestas_estrategicas WHERE estado != 'DESCARTADA'
+            GROUP BY impacto ORDER BY n DESC
+        """))
+        stats["por_impacto"] = [dict(row) for row in r4.mappings().all()]
+
+        return stats
+
+
+@app.get("/api/propuestas/favoritos", tags=["Propuestas"])
+async def propuestas_favoritos():
+    """Lista de propuestas favoritas"""
+    async with async_session() as session:
+        r = await session.execute(text(
+            "SELECT * FROM hgu_propuestas_estrategicas WHERE favorito = true AND estado != 'DESCARTADA' ORDER BY impacto_score DESC"
+        ))
+        return [dict(row) for row in r.mappings().all()]
+
+
+@app.get("/api/propuestas/matriz", tags=["Propuestas"])
+async def propuestas_matriz():
+    """Datos para gráfico matriz impacto vs esfuerzo"""
+    async with async_session() as session:
+        r = await session.execute(text("""
+            SELECT id, titulo, esfuerzo, impacto_score, eje, estado, impacto
+            FROM hgu_propuestas_estrategicas
+            WHERE estado NOT IN ('DESCARTADA')
+            ORDER BY impacto_score DESC
+        """))
+        return [dict(row) for row in r.mappings().all()]
+
+
+@app.get("/api/propuestas", tags=["Propuestas"])
+async def propuestas_list(
+    eje: str | None = None,
+    estado: str | None = None,
+    impacto: str | None = None,
+    favorito: str | None = None,
+    origen: str | None = None,
+    buscar: str | None = None,
+    skip: int = 0,
+    limit: int = 100
+):
+    """Catálogo de propuestas estratégicas con filtros"""
+    where = []
+    params = {}
+    if eje:
+        where.append("eje = :eje")
+        params["eje"] = eje
+    if estado:
+        where.append("estado = :estado")
+        params["estado"] = estado
+    if impacto:
+        where.append("impacto = :impacto")
+        params["impacto"] = impacto
+    if favorito and favorito.lower() == 'true':
+        where.append("favorito = true")
+    if origen:
+        where.append("origen = :origen")
+        params["origen"] = origen
+    if buscar:
+        where.append("(titulo ILIKE :q OR descripcion ILIKE :q OR apis_necesarias ILIKE :q OR ml_recomendado ILIKE :q)")
+        params["q"] = f"%{buscar}%"
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    params["skip"] = skip
+    params["limit"] = limit
+    async with async_session() as session:
+        r = await session.execute(
+            text(f"SELECT * FROM hgu_propuestas_estrategicas{clause} ORDER BY impacto_score DESC, fecha_creacion DESC OFFSET :skip LIMIT :limit"),
+            params
+        )
+        return [dict(row) for row in r.mappings().all()]
+
+
+@app.get("/api/propuestas/{prop_id}", tags=["Propuestas"])
+async def propuestas_detail(prop_id: int):
+    """Detalle de una propuesta estratégica"""
+    async with async_session() as session:
+        r = await session.execute(
+            text("SELECT * FROM hgu_propuestas_estrategicas WHERE id = :id"), {"id": prop_id})
+        row = r.mappings().first()
+        if not row:
+            raise HTTPException(404, "Propuesta no encontrada")
+        return dict(row)
+
+
+@app.post("/api/propuestas/generar", tags=["Propuestas"])
+async def propuestas_generar():
+    """Generador inteligente: cruza Radar+APIs+ML y genera 5 propuestas nuevas con IA"""
+    if not OPENAI_API_KEY:
+        raise HTTPException(500, "OPENAI_API_KEY no configurada")
+
+    async with async_session() as session:
+        # Recopilar contexto
+        r1 = await session.execute(text(
+            "SELECT titulo, resumen_ia, categoria, relevancia FROM hgu_radar_items WHERE archivado = false ORDER BY relevancia DESC NULLS LAST LIMIT 20"
+        ))
+        radar_items = [dict(row) for row in r1.mappings().all()]
+
+        r2 = await session.execute(text(
+            "SELECT nombre, estado, bloque, caso_uso FROM hgu_hub_apis WHERE estado IN ('CONECTADA','EN_APEX') OR prioridad = 'P1'"
+        ))
+        apis = [dict(row) for row in r2.mappings().all()]
+
+        r3 = await session.execute(text(
+            "SELECT nombre, tipo_ml, categoria_farmacia, caso_uso FROM hgu_ml_algoritmos WHERE favorito = true OR relevancia >= 70"
+        ))
+        ml_algos = [dict(row) for row in r3.mappings().all()]
+
+        r4 = await session.execute(text(
+            "SELECT titulo FROM hgu_propuestas_estrategicas WHERE estado != 'DESCARTADA'"
+        ))
+        existentes = [row["titulo"] for row in r4.mappings().all()]
+
+    radar_txt = "; ".join([f"{i['titulo']} (rel:{i['relevancia']})" for i in radar_items[:15]]) if radar_items else "Sin datos aún"
+    apis_txt = "; ".join([f"{a['nombre']} ({a['estado']})" for a in apis]) if apis else "Sin APIs conectadas aún"
+    ml_txt = "; ".join([f"{m['nombre']} ({m['tipo_ml']})" for m in ml_algos]) if ml_algos else "Sin algoritmos favoritos aún"
+    exist_txt = ", ".join(existentes) if existentes else "Ninguna"
+
+    prompt = PROPUESTAS_GENERAR_PROMPT.format(
+        radar=radar_txt, apis=apis_txt, ml=ml_txt, existentes=exist_txt
+    )
+
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
+                         "Content-Type": "application/json"},
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": prompt},
+                        {"role": "user", "content": "Genera 5 propuestas estratégicas nuevas para SIGFAR Hub. Formato JSON estricto."}
+                    ],
+                    "temperature": 0.7, "max_tokens": 2000
+                },
+                timeout=60
+            )
+            r.raise_for_status()
+            raw = r.json()["choices"][0]["message"]["content"].strip()
+            raw = _re.sub(r'^```(?:json)?\s*', '', raw)
+            raw = _re.sub(r'\s*```$', '', raw)
+            data = json.loads(raw)
+        except Exception as e:
+            raise HTTPException(502, f"Error Groq: {str(e)[:300]}")
+
+    propuestas = data.get("propuestas", [])
+    inserted = []
+
+    async with async_session() as session:
+        for p in propuestas[:5]:
+            await session.execute(text("""
+                INSERT INTO hgu_propuestas_estrategicas
+                    (titulo, descripcion, eje, impacto, estado, preview_descripcion, por_que_hub,
+                     apis_necesarias, ml_recomendado, datos_cruza, tiempo_estimado,
+                     esfuerzo, impacto_score, demo_target, origen, tags)
+                VALUES
+                    (:titulo, :desc, :eje, :impacto, 'GENERADA_IA', :preview, :hub,
+                     :apis, :ml, :datos, :tiempo,
+                     :esfuerzo, :impacto_score, :demo, 'GENERADA_IA', :tags)
+            """), {
+                "titulo": p.get("titulo", "Sin título"),
+                "desc": p.get("descripcion", ""),
+                "eje": p.get("eje", "CLINICO") if p.get("eje") in ('CLINICO','ECONOMICO','LOGISTICO','TECNICO','DIRECTIVO','FORMACION') else 'CLINICO',
+                "impacto": p.get("impacto", "MEDIO") if p.get("impacto") in ('MUY_ALTO','ALTO','MEDIO','BAJO') else 'MEDIO',
+                "preview": p.get("preview_descripcion", ""),
+                "hub": p.get("por_que_hub", ""),
+                "apis": p.get("apis_necesarias", ""),
+                "ml": p.get("ml_recomendado", ""),
+                "datos": p.get("datos_cruza", ""),
+                "tiempo": p.get("tiempo_estimado", ""),
+                "esfuerzo": min(100, max(0, int(p.get("esfuerzo", 50)))),
+                "impacto_score": min(100, max(0, int(p.get("impacto_score", 50)))),
+                "demo": p.get("demo_target", ""),
+                "tags": p.get("tags", "")
+            })
+            inserted.append(p)
+        await session.commit()
+
+    return {"status": "OK", "generadas": len(inserted), "propuestas": inserted}
+
+
+@app.post("/api/propuestas/analizar/{prop_id}", tags=["Propuestas"])
+async def propuestas_analizar(prop_id: int):
+    """Generar plan detallado de implementación con IA"""
+    if not OPENAI_API_KEY:
+        raise HTTPException(500, "OPENAI_API_KEY no configurada")
+
+    async with async_session() as session:
+        r = await session.execute(
+            text("SELECT * FROM hgu_propuestas_estrategicas WHERE id = :id"), {"id": prop_id})
+        prop = r.mappings().first()
+        if not prop:
+            raise HTTPException(404, "Propuesta no encontrada")
+        prop_data = dict(prop)
+
+    user_msg = (
+        f"Propuesta: {prop_data['titulo']}\n"
+        f"Eje: {prop_data['eje']}\n"
+        f"Descripción: {prop_data['descripcion']}\n"
+        f"APIs necesarias: {prop_data.get('apis_necesarias', 'N/A')}\n"
+        f"ML recomendado: {prop_data.get('ml_recomendado', 'N/A')}\n"
+        f"Datos que cruza: {prop_data.get('datos_cruza', 'N/A')}\n"
+        f"Impacto: {prop_data['impacto']}\n"
+        f"Tiempo estimado: {prop_data.get('tiempo_estimado', 'N/A')}"
+    )
+
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
+                         "Content-Type": "application/json"},
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": PROPUESTAS_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_msg}
+                    ],
+                    "temperature": 0.3, "max_tokens": 1000
+                },
+                timeout=30
+            )
+            r.raise_for_status()
+            raw = r.json()["choices"][0]["message"]["content"].strip()
+            raw = _re.sub(r'^```(?:json)?\s*', '', raw)
+            raw = _re.sub(r'\s*```$', '', raw)
+            data = json.loads(raw)
+        except Exception as e:
+            raise HTTPException(502, f"Error Groq: {str(e)[:200]}")
+
+    plan = data.get("plan", raw)
+
+    async with async_session() as session:
+        await session.execute(text("""
+            UPDATE hgu_propuestas_estrategicas
+            SET propuesta_ia = :plan, fecha_actualizacion = NOW()
+            WHERE id = :id
+        """), {"plan": plan, "id": prop_id})
+        await session.commit()
+        result = await session.execute(
+            text("SELECT * FROM hgu_propuestas_estrategicas WHERE id = :id"), {"id": prop_id})
+        return dict(result.mappings().first())
+
+
+@app.post("/api/propuestas/cambiar-estado", tags=["Propuestas"])
+async def propuestas_cambiar_estado(body: PropuestaCambiarEstado):
+    """Cambiar estado de una propuesta"""
+    if body.estado not in PROPUESTAS_ESTADOS_VALIDOS:
+        raise HTTPException(400, f"Estado inválido. Válidos: {PROPUESTAS_ESTADOS_VALIDOS}")
+    async with async_session() as session:
+        await session.execute(text("""
+            UPDATE hgu_propuestas_estrategicas
+            SET estado = :estado, fecha_actualizacion = NOW()
+            WHERE id = :id
+        """), {"estado": body.estado, "id": body.id})
+        await session.commit()
+    return {"status": "OK"}
+
+
+@app.post("/api/propuestas/toggle-favorito", tags=["Propuestas"])
+async def propuestas_toggle_fav(body: PropuestaToggleFav):
+    """Toggle favorito de una propuesta"""
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_propuestas_estrategicas SET favorito = NOT favorito WHERE id = :id"),
+            {"id": body.propuesta_id})
+        await session.commit()
+        r = await session.execute(
+            text("SELECT favorito FROM hgu_propuestas_estrategicas WHERE id = :id"),
+            {"id": body.propuesta_id})
+        row = r.mappings().first()
+        return {"id": body.propuesta_id, "favorito": row["favorito"] if row else False}
+
+
+@app.post("/api/propuestas/set-nota", tags=["Propuestas"])
+async def propuestas_set_nota(body: PropuestaSetNota):
+    """Guardar nota del usuario en una propuesta"""
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_propuestas_estrategicas SET nota_usuario = :nota, fecha_actualizacion = NOW() WHERE id = :id"),
+            {"id": body.propuesta_id, "nota": body.nota})
+        await session.commit()
+    return {"status": "OK"}
+
+
+@app.post("/api/propuestas/set-prioridad", tags=["Propuestas"])
+async def propuestas_set_prioridad(body: PropuestaSetPrioridad):
+    """Guardar prioridad personal del farmacéutico"""
+    if body.prioridad not in ('ALTA', 'MEDIA', 'BAJA'):
+        raise HTTPException(400, "Prioridad debe ser ALTA, MEDIA o BAJA")
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_propuestas_estrategicas SET prioridad_usuario = :p, fecha_actualizacion = NOW() WHERE id = :id"),
+            {"id": body.propuesta_id, "p": body.prioridad})
+        await session.commit()
+    return {"status": "OK"}
+
+

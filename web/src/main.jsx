@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Link, useParams } from 'react-router-dom'
 import Markdown from 'react-markdown'
-import { Activity, AlertCircle, AlertTriangle, Archive, BarChart3, BookOpen, Brain, BrainCircuit, Building2, Calculator, CheckCircle2, ChevronDown, ChevronRight, Clipboard, Clock, Cpu, Database, ExternalLink, FileText, Filter, FlaskConical, Gauge, GitBranch, Globe, Heart, Home, Hourglass, Hospital, Info, Layers, LayoutDashboard, Mic, MicOff, MonitorSmartphone, Network, Pill, Plug, Radar, RefreshCw, Search, Send, Server, Shield, ShieldAlert, Star, Stethoscope, StickyNote, Tags, Target, TrendingDown, TrendingUp, Users, Volume2, VolumeX, Wallet, Wifi, WifiOff, XCircle, Zap } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, Archive, BarChart3, BookOpen, Brain, BrainCircuit, Building2, Calculator, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, Clipboard, Clock, Cpu, Database, ExternalLink, FileText, Filter, FlaskConical, Gauge, GitBranch, Globe, GraduationCap, Heart, HeartPulse, Home, Hourglass, Hospital, Info, Layers, LayoutDashboard, Lightbulb, Mic, MicOff, MonitorSmartphone, Network, Pill, Plug, Presentation, Radar, RefreshCw, Rocket, Search, Send, Server, Shield, ShieldAlert, Sparkles, Star, Stethoscope, StickyNote, Tags, Target, TrendingDown, TrendingUp, Truck, Users, Volume2, VolumeX, Wallet, Wifi, WifiOff, Wrench, X, XCircle, Zap } from 'lucide-react'
 import './style.css'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -34,6 +34,7 @@ function Nav() {
         <Link to="/radar"><span className="nav-icon"><Radar size={16}/></span>Radar IA</Link>
         <Link to="/apis"><span className="nav-icon"><Plug size={16}/></span>APIs</Link>
         <Link to="/ml"><span className="nav-icon"><BrainCircuit size={16}/></span>Algoritmos ML</Link>
+        <Link to="/propuestas"><span className="nav-icon"><Lightbulb size={16}/></span>Propuestas</Link>
         <Link to="/integraciones"><span className="nav-icon"><Network size={16}/></span>Integraciones</Link>
         <Link to="/jefatura"><span className="nav-icon"><Building2 size={16}/></span>Dirección Servicio Farmacia</Link>
         <Link to="/"><span className="nav-icon"><LayoutDashboard size={16}/></span>Dashboard</Link>
@@ -2063,6 +2064,435 @@ function AlgoritmosML() {
   )
 }
 
+/* ═══ Propuestas Estratégicas — Lookup maps ═══ */
+const PROP_EJE_LABELS = {
+  CLINICO: 'Clínico', ECONOMICO: 'Económico', LOGISTICO: 'Logístico',
+  TECNICO: 'Técnico', DIRECTIVO: 'Directivo', FORMACION: 'Formación'
+}
+const PROP_EJE_ICONS = {
+  CLINICO: HeartPulse, ECONOMICO: TrendingDown, LOGISTICO: Truck,
+  TECNICO: Wrench, DIRECTIVO: Presentation, FORMACION: GraduationCap
+}
+const PROP_EJE_COLORS = {
+  CLINICO: '#ef4444', ECONOMICO: '#f59e0b', LOGISTICO: '#3b82f6',
+  TECNICO: '#8b5cf6', DIRECTIVO: '#06b6d4', FORMACION: '#10b981'
+}
+const PROP_ESTADO_LABELS = {
+  PROPUESTA: 'Propuesta', EN_ANALISIS: 'En análisis', EN_DESARROLLO: 'En desarrollo',
+  PILOTO: 'Piloto', PRODUCCION: 'Producción', DESCARTADA: 'Descartada', GENERADA_IA: 'Generada IA'
+}
+const PROP_ESTADO_ICONS = {
+  PROPUESTA: Circle, EN_ANALISIS: Search, EN_DESARROLLO: Wrench,
+  PILOTO: FlaskConical, PRODUCCION: Rocket, DESCARTADA: X, GENERADA_IA: Sparkles
+}
+const PROP_ESTADO_COLORS = {
+  PROPUESTA: '#94a3b8', EN_ANALISIS: '#2563eb', EN_DESARROLLO: '#ea580c',
+  PILOTO: '#7c3aed', PRODUCCION: '#16a34a', DESCARTADA: '#dc2626', GENERADA_IA: '#d97706'
+}
+const PROP_IMPACTO_COLORS = { MUY_ALTO: '#dc2626', ALTO: '#ea580c', MEDIO: '#d97706', BAJO: '#94a3b8' }
+
+/* ═══ PropuestasEstrategicas ═══ */
+function PropuestasEstrategicas() {
+  const [props, setProps] = React.useState([])
+  const [favs, setFavs] = React.useState([])
+  const [stats, setStats] = React.useState(null)
+  const [matriz, setMatriz] = React.useState([])
+  const [loading, setLoading] = React.useState(true)
+  const [filtroEje, setFiltroEje] = React.useState('')
+  const [filtroEstado, setFiltroEstado] = React.useState('')
+  const [filtroImpacto, setFiltroImpacto] = React.useState('')
+  const [filtroOrigen, setFiltroOrigen] = React.useState('')
+  const [buscar, setBuscar] = React.useState('')
+  const [tab, setTab] = React.useState('catalogo')
+  const [generating, setGenerating] = React.useState(false)
+  const [enriching, setEnriching] = React.useState(null)
+  const [notaModal, setNotaModal] = React.useState(null)
+  const [notaText, setNotaText] = React.useState('')
+  const [expandedHub, setExpandedHub] = React.useState({})
+  const [expandedPlan, setExpandedPlan] = React.useState({})
+
+  const loadProps = () => {
+    let url = '/api/propuestas?'
+    if (filtroEje) url += `eje=${filtroEje}&`
+    if (filtroEstado) url += `estado=${filtroEstado}&`
+    if (filtroImpacto) url += `impacto=${filtroImpacto}&`
+    if (filtroOrigen) url += `origen=${filtroOrigen}&`
+    if (buscar) url += `buscar=${encodeURIComponent(buscar)}&`
+    fetch(API + url).then(r => r.json()).then(d => { setProps(d); setLoading(false) }).catch(() => setLoading(false))
+  }
+  const loadStats = () => { fetch(API + '/api/propuestas/stats').then(r => r.json()).then(setStats).catch(() => {}) }
+  const loadFavs = () => { fetch(API + '/api/propuestas/favoritos').then(r => r.json()).then(setFavs).catch(() => {}) }
+  const loadMatriz = () => { fetch(API + '/api/propuestas/matriz').then(r => r.json()).then(setMatriz).catch(() => {}) }
+
+  React.useEffect(() => { loadProps(); loadStats() }, [filtroEje, filtroEstado, filtroImpacto, filtroOrigen, buscar])
+  React.useEffect(() => { if (tab === 'favoritos') loadFavs(); if (tab === 'matriz') loadMatriz() }, [tab])
+
+  const generar = async () => {
+    setGenerating(true)
+    try { await fetch(API + '/api/propuestas/generar', { method: 'POST' }); loadProps(); loadStats() } catch {}
+    setGenerating(false)
+  }
+
+  const analizar = async (id) => {
+    setEnriching(id)
+    try { await fetch(API + `/api/propuestas/analizar/${id}`, { method: 'POST' }); loadProps() } catch {}
+    setEnriching(null)
+  }
+
+  const toggleFav = async (id) => {
+    await fetch(API + '/api/propuestas/toggle-favorito', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ propuesta_id: id }) })
+    loadProps(); loadStats(); if (tab === 'favoritos') loadFavs()
+  }
+
+  const cambiarEstado = async (id, estado) => {
+    await fetch(API + '/api/propuestas/cambiar-estado', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id, estado }) })
+    loadProps(); loadStats()
+  }
+
+  const setPrio = async (id, p) => {
+    await fetch(API + '/api/propuestas/set-prioridad', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ propuesta_id: id, prioridad: p }) })
+    if (tab === 'favoritos') loadFavs(); else loadProps()
+  }
+
+  const saveNota = async () => {
+    if (!notaModal) return
+    await fetch(API + '/api/propuestas/set-nota', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ propuesta_id: notaModal, nota: notaText }) })
+    setNotaModal(null); loadProps(); if (tab === 'favoritos') loadFavs()
+  }
+
+  const renderCard = (p, showPrio = false) => {
+    const EjeIcon = PROP_EJE_ICONS[p.eje] || Lightbulb
+    const ejeColor = PROP_EJE_COLORS[p.eje] || '#888'
+    const EstIcon = PROP_ESTADO_ICONS[p.estado] || Circle
+    const estColor = PROP_ESTADO_COLORS[p.estado] || '#888'
+    const impColor = PROP_IMPACTO_COLORS[p.impacto] || '#888'
+    return (
+      <div key={p.id} className={`propuesta-card eje-${p.eje.toLowerCase()}`}>
+        <div className="api-card-top">
+          <div className="api-card-icon" style={{background: ejeColor + '18', color: ejeColor}}>
+            <EjeIcon size={22} />
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <h3 className="api-card-name">{p.titulo}</h3>
+            <span className="cat-tag" style={{background: ejeColor}}>{PROP_EJE_LABELS[p.eje]}</span>
+          </div>
+          <button className="fav-btn" onClick={()=>toggleFav(p.id)}>
+            <Star size={16} fill={p.favorito ? 'currentColor' : 'none'} color={p.favorito ? '#f59e0b' : '#94a3b8'} />
+          </button>
+        </div>
+
+        <div className="api-card-badges">
+          <span className="api-estado-badge" style={{color: estColor, borderColor: estColor}}>
+            <EstIcon size={12}/> {PROP_ESTADO_LABELS[p.estado]}
+          </span>
+          <span className="ml-comp-badge" style={{color: impColor, borderColor: impColor}}>
+            <TrendingUp size={12}/> {p.impacto.replace('_',' ')}
+          </span>
+          {p.origen === 'GENERADA_IA' && <span className="prop-origen-ia"><Sparkles size={12}/> Generada IA</span>}
+          {p.origen === 'RADAR' && <span className="prop-origen-radar"><Radar size={12}/> Desde Radar</span>}
+          {p.tiempo_estimado && <span style={{fontSize:11,color:'#64748b'}}><Clock size={11}/> {p.tiempo_estimado}</span>}
+        </div>
+
+        <p className="api-card-desc">{p.descripcion}</p>
+
+        {p.preview_descripcion && (
+          <div className="prop-preview"><code>{p.preview_descripcion}</code></div>
+        )}
+
+        {p.por_que_hub && (
+          <div className="prop-collapse">
+            <button className="prop-collapse-btn" onClick={()=>setExpandedHub(prev=>({...prev,[p.id]:!prev[p.id]}))}>
+              <ChevronRight size={14} style={{transform: expandedHub[p.id] ? 'rotate(90deg)' : 'none', transition:'.2s'}}/> Por qué Hub y no APEX
+            </button>
+            {expandedHub[p.id] && <div className="prop-collapse-content">{p.por_que_hub}</div>}
+          </div>
+        )}
+
+        {p.apis_necesarias && (
+          <div className="prop-links"><Plug size={11}/> {p.apis_necesarias.split(',').map((a,i) =>
+            <Link key={i} to={`/apis?buscar=${encodeURIComponent(a.trim())}`} className="prop-link-badge">{a.trim()}</Link>
+          )}</div>
+        )}
+        {p.ml_recomendado && (
+          <div className="prop-links"><BrainCircuit size={11}/> {p.ml_recomendado.split(',').map((m,i) =>
+            <Link key={i} to={`/ml?buscar=${encodeURIComponent(m.trim())}`} className="prop-link-badge prop-link-ml">{m.trim()}</Link>
+          )}</div>
+        )}
+        {p.datos_cruza && (
+          <div className="prop-datos"><Database size={11}/> {p.datos_cruza}</div>
+        )}
+        {p.demo_target && (
+          <div style={{fontSize:11,color:'#64748b'}}><Target size={11}/> Demo: {p.demo_target}</div>
+        )}
+
+        {p.propuesta_ia && (
+          <div className="prop-collapse">
+            <button className="prop-collapse-btn" onClick={()=>setExpandedPlan(prev=>({...prev,[p.id]:!prev[p.id]}))}>
+              <ChevronRight size={14} style={{transform: expandedPlan[p.id] ? 'rotate(90deg)' : 'none', transition:'.2s'}}/> Plan detallado IA
+            </button>
+            {expandedPlan[p.id] && <div className="apis-propuesta"><p>{p.propuesta_ia}</p></div>}
+          </div>
+        )}
+
+        {showPrio && (
+          <div className="ml-fav-prio">
+            <select value={p.prioridad_usuario||''} onChange={e=>setPrio(p.id,e.target.value)} className="radar-prio-select">
+              <option value="">Mi prioridad...</option>
+              <option value="ALTA">Alta</option>
+              <option value="MEDIA">Media</option>
+              <option value="BAJA">Baja</option>
+            </select>
+            {p.prioridad_usuario && (
+              <span className={`prio-badge prio-${p.prioridad_usuario.toLowerCase()}`}>
+                {p.prioridad_usuario === 'ALTA' ? <AlertTriangle size={12}/> : p.prioridad_usuario === 'MEDIA' ? <AlertCircle size={12}/> : <Info size={12}/>} {p.prioridad_usuario}
+              </span>
+            )}
+          </div>
+        )}
+        {showPrio && p.nota_usuario && <div className="radar-nota-preview"><StickyNote size={12}/> {p.nota_usuario}</div>}
+
+        <div className="api-card-actions">
+          <select value={p.estado} onChange={e=>cambiarEstado(p.id,e.target.value)} className="prop-estado-select">
+            <option value="PROPUESTA">Propuesta</option>
+            <option value="EN_ANALISIS">En análisis</option>
+            <option value="EN_DESARROLLO">En desarrollo</option>
+            <option value="PILOTO">Piloto</option>
+            <option value="PRODUCCION">Producción</option>
+            <option value="DESCARTADA">Descartada</option>
+          </select>
+          <button onClick={()=>analizar(p.id)} disabled={enriching===p.id} title="Analizar con IA">
+            {enriching===p.id ? <><span className="apis-spinner"/> Analizando...</> : <><Sparkles size={14}/> Analizar IA</>}
+          </button>
+          <button onClick={()=>{setNotaModal(p.id);setNotaText(p.nota_usuario||'')}} title="Nota">
+            <StickyNote size={14}/>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const matrizRef = React.useRef(null)
+  const [hovered, setHovered] = React.useState(null)
+
+  return (
+    <div className="propuestas-page">
+      <div className="propuestas-header">
+        <div>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:6}}>
+            <Lightbulb size={28} color="#fff" />
+            <h1 style={{fontSize:24,fontWeight:800,color:'#fff',margin:0}}>SIGFAR Hub · Propuestas Estratégicas</h1>
+            <span className="live-badge"><span className="live-dot"></span>{stats ? stats.total : '...'} Propuestas</span>
+          </div>
+          <p style={{fontSize:13,color:'rgba(255,255,255,.7)',margin:0}}>Generador inteligente de propuestas de innovación farmacéutica</p>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:16}}>
+          <div style={{textAlign:'right',color:'#fff'}}>
+            <div style={{fontSize:13,opacity:.7}}>En desarrollo</div>
+            <div style={{fontSize:28,fontWeight:800,color:'#f59e0b'}}>{(stats?.en_desarrollo||0)+(stats?.en_analisis||0)}</div>
+          </div>
+          <div style={{textAlign:'right',color:'#fff'}}>
+            <div style={{fontSize:13,opacity:.7}}>Favoritas</div>
+            <div style={{fontSize:28,fontWeight:800}}>{stats?.favoritos||0}</div>
+          </div>
+          <button className="prop-generar-btn" onClick={generar} disabled={generating}>
+            {generating ? <><span className="radar-spinner"/> Generando...</> : <><Sparkles size={16}/> Generar con IA</>}
+          </button>
+        </div>
+      </div>
+
+      <div className="radar-tabs">
+        <button className={tab==='catalogo'?'active':''} onClick={()=>setTab('catalogo')}><Lightbulb size={14}/> Catálogo</button>
+        <button className={tab==='favoritos'?'active':''} onClick={()=>setTab('favoritos')}><Star size={14}/> Mis favoritas ({stats?.favoritos||0})</button>
+        <button className={tab==='ejes'?'active':''} onClick={()=>setTab('ejes')}><BarChart3 size={14}/> Por eje</button>
+        <button className={tab==='matriz'?'active':''} onClick={()=>setTab('matriz')}><Target size={14}/> Matriz impacto</button>
+        <button className={tab==='stats'?'active':''} onClick={()=>setTab('stats')}><BarChart3 size={14}/> Estadísticas</button>
+      </div>
+
+      {tab === 'catalogo' && (
+        <>
+          <div className="radar-filters">
+            <Filter size={16} style={{color:'#64748b',flexShrink:0}} />
+            <select value={filtroEje} onChange={e=>setFiltroEje(e.target.value)}>
+              <option value="">Todos los ejes</option>
+              {Object.entries(PROP_EJE_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)}>
+              <option value="">Todos los estados</option>
+              {Object.entries(PROP_ESTADO_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <select value={filtroImpacto} onChange={e=>setFiltroImpacto(e.target.value)}>
+              <option value="">Todo impacto</option>
+              <option value="MUY_ALTO">Muy alto</option>
+              <option value="ALTO">Alto</option>
+              <option value="MEDIO">Medio</option>
+              <option value="BAJO">Bajo</option>
+            </select>
+            <select value={filtroOrigen} onChange={e=>setFiltroOrigen(e.target.value)}>
+              <option value="">Todo origen</option>
+              <option value="MANUAL">Manual</option>
+              <option value="GENERADA_IA">Generada IA</option>
+              <option value="RADAR">Desde Radar</option>
+            </select>
+            <div className="radar-search-wrap">
+              <Search size={14} className="radar-search-icon" />
+              <input className="radar-search" type="text" placeholder="Buscar propuesta..." value={buscar} onChange={e=>setBuscar(e.target.value)} />
+            </div>
+          </div>
+
+          {loading ? <p className="apis-loading">Cargando propuestas...</p> : (
+            <div className="propuestas-grid">
+              {props.map(p => renderCard(p))}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'favoritos' && (
+        <div className="apis-favs-section">
+          <h3 style={{fontSize:18,fontWeight:700,marginBottom:16}}><Star size={18} color="#f59e0b"/> Mis propuestas favoritas ({favs.length})</h3>
+          {favs.length === 0 ? <p style={{color:'#64748b'}}>No hay propuestas favoritas. Marca propuestas con <Star size={12}/> para organizar tu backlog aquí.</p> : (
+            <div className="propuestas-grid">
+              {favs.map(p => renderCard(p, true))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'ejes' && (
+        <div className="prop-ejes-section">
+          {Object.entries(PROP_EJE_LABELS).map(([eje, label]) => {
+            const ejeProps = props.filter(p => p.eje === eje)
+            if (ejeProps.length === 0) return null
+            const EIcon = PROP_EJE_ICONS[eje]
+            const color = PROP_EJE_COLORS[eje]
+            const prod = ejeProps.filter(p => p.estado === 'PRODUCCION').length
+            const pct = ejeProps.length ? Math.round(prod / ejeProps.length * 100) : 0
+            return (
+              <div key={eje} className="prop-eje-group">
+                <div className="prop-eje-header" style={{borderLeftColor: color}}>
+                  <EIcon size={20} color={color}/>
+                  <span style={{fontWeight:700,fontSize:16}}>{label}</span>
+                  <span style={{fontSize:12,color:'#64748b'}}>({ejeProps.length} propuestas)</span>
+                  <div className="prop-eje-progress">
+                    <div className="prop-eje-bar" style={{width: pct+'%', background: color}}/>
+                  </div>
+                  <span style={{fontSize:11,color:'#64748b'}}>{pct}% en producción</span>
+                </div>
+                <div className="propuestas-grid">
+                  {ejeProps.map(p => renderCard(p))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {tab === 'matriz' && (
+        <div className="prop-matriz-section">
+          <h3 style={{fontSize:18,fontWeight:700,marginBottom:16}}><Target size={18}/> Matriz Impacto vs Esfuerzo</h3>
+          <div className="matriz-container" ref={matrizRef}>
+            <div className="matriz-labels">
+              <span className="matriz-label-y">Impacto</span>
+              <span className="matriz-label-x">Esfuerzo</span>
+            </div>
+            <div className="matriz-quadrants">
+              <div className="matriz-q quick-win"><span>QUICK WINS</span></div>
+              <div className="matriz-q strategic"><span>ESTRATEGICOS</span></div>
+              <div className="matriz-q minor"><span>MEJORAS MENORES</span></div>
+              <div className="matriz-q avoid"><span>EVITAR</span></div>
+            </div>
+            {matriz.map(p => {
+              const x = Math.max(5, Math.min(95, p.esfuerzo))
+              const y = Math.max(5, Math.min(95, 100 - p.impacto_score))
+              const color = PROP_EJE_COLORS[p.eje] || '#888'
+              return (
+                <div key={p.id} className="matriz-punto"
+                  style={{left: x+'%', top: y+'%', background: color}}
+                  onMouseEnter={()=>setHovered(p)}
+                  onMouseLeave={()=>setHovered(null)}
+                  title={`${p.titulo} (${PROP_EJE_LABELS[p.eje]})`}
+                />
+              )
+            })}
+            {hovered && (
+              <div className="matriz-tooltip" style={{left: Math.min(70, hovered.esfuerzo)+'%', top: Math.max(10, 100-hovered.impacto_score-10)+'%'}}>
+                <strong>{hovered.titulo}</strong>
+                <div>{PROP_EJE_LABELS[hovered.eje]} · {hovered.impacto.replace('_',' ')}</div>
+                <div>Esfuerzo: {hovered.esfuerzo} · Impacto: {hovered.impacto_score}</div>
+              </div>
+            )}
+          </div>
+          <div className="matriz-legend">
+            {Object.entries(PROP_EJE_LABELS).map(([k,v]) => (
+              <span key={k} className="matriz-legend-item">
+                <span className="matriz-legend-dot" style={{background: PROP_EJE_COLORS[k]}}/>
+                {v}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {tab === 'stats' && stats && (
+        <div className="radar-stats-section">
+          <div className="apis-stats-cards">
+            <div className="apis-stat-card"><span className="apis-stat-num">{stats.total}</span><span>Total</span></div>
+            <div className="apis-stat-card conectada"><span className="apis-stat-num">{stats.produccion||0}</span><span>Producción</span></div>
+            <div className="apis-stat-card pendiente"><span className="apis-stat-num">{stats.en_desarrollo||0}</span><span>En desarrollo</span></div>
+            <div className="apis-stat-card apex"><span className="apis-stat-num">{stats.en_analisis||0}</span><span>En análisis</span></div>
+            <div className="apis-stat-card"><span className="apis-stat-num">{stats.favoritos||0}</span><span>Favoritas</span></div>
+            <div className="apis-stat-card futuro"><span className="apis-stat-num">{stats.generadas_ia||0}</span><span>Generadas IA</span></div>
+          </div>
+
+          <h3 style={{fontSize:16,fontWeight:700,margin:'24px 0 12px'}}><BarChart3 size={16}/> Por eje</h3>
+          <div className="radar-bars">
+            {stats.por_eje && stats.por_eje.map(e => {
+              const pct = stats.total ? Math.round(e.n/stats.total*100) : 0
+              const EIcon = PROP_EJE_ICONS[e.eje] || Lightbulb
+              const color = PROP_EJE_COLORS[e.eje] || '#888'
+              return (
+                <div key={e.eje} className="radar-bar-row">
+                  <span className="radar-bar-label"><EIcon size={12}/> {PROP_EJE_LABELS[e.eje]}</span>
+                  <div className="radar-bar-track"><div className="radar-bar-fill" style={{width: pct+'%', background: color}}/></div>
+                  <span className="radar-bar-val">{e.n}</span>
+                </div>
+              )
+            })}
+          </div>
+
+          <h3 style={{fontSize:16,fontWeight:700,margin:'24px 0 12px'}}>Por impacto</h3>
+          <div className="radar-bars">
+            {stats.por_impacto && stats.por_impacto.map(i => {
+              const pct = stats.total ? Math.round(i.n/stats.total*100) : 0
+              const color = PROP_IMPACTO_COLORS[i.impacto] || '#888'
+              return (
+                <div key={i.impacto} className="radar-bar-row">
+                  <span className="radar-bar-label">{i.impacto.replace('_',' ')}</span>
+                  <div className="radar-bar-track"><div className="radar-bar-fill" style={{width: pct+'%', background: color}}/></div>
+                  <span className="radar-bar-val">{i.n}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {notaModal && (
+        <div className="radar-modal-overlay" onClick={()=>setNotaModal(null)}>
+          <div className="radar-modal" onClick={e=>e.stopPropagation()}>
+            <h4><StickyNote size={16}/> Nota</h4>
+            <textarea value={notaText} onChange={e=>setNotaText(e.target.value)} rows={4} placeholder="Escribe tu nota aquí..." />
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:12}}>
+              <button className="radar-modal-cancel" onClick={()=>setNotaModal(null)}>Cancelar</button>
+              <button className="radar-modal-save" onClick={saveNota}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ═══ App ═══ */
 function App() {
   return (
@@ -2079,6 +2509,7 @@ function App() {
           <Route path="/radar" element={<RadarIA />} />
           <Route path="/apis" element={<CatalogoAPIs />} />
           <Route path="/ml" element={<AlgoritmosML />} />
+          <Route path="/propuestas" element={<PropuestasEstrategicas />} />
         </Routes>
       </main>
     </BrowserRouter>
