@@ -3546,3 +3546,291 @@ async def guardias_conflictos():
         }
 
 
+# ═══════════════════════════════════════════════════════════════
+# MÓDULO H: HERRAMIENTAS IA — 10 endpoints
+# ═══════════════════════════════════════════════════════════════
+
+# ── H1. Listar herramientas (con filtros opcionales) ─────────
+@app.get("/api/herramientas")
+async def listar_herramientas(categoria: str = None, nivel: str = None, buscar: str = None):
+    async with async_session() as s:
+        where = []
+        if categoria:
+            where.append(f"categoria = '{categoria}'")
+        if nivel:
+            where.append(f"nivel_dificultad = '{nivel}'")
+        if buscar:
+            safe = buscar.replace("'", "''")
+            where.append(f"(LOWER(nombre) LIKE LOWER('%{safe}%') OR LOWER(descripcion_corta) LIKE LOWER('%{safe}%') OR tags::text ILIKE '%{safe}%')")
+        clause = " AND ".join(where) if where else "TRUE"
+        rows = (await s.execute(text(f"""
+            SELECT id, nombre, url, logo_emoji, descripcion_corta, categoria, empresa,
+                   plan_gratuito, nivel_dificultad, privacidad, requiere_cuenta, tags,
+                   favorito, valoracion, orden
+            FROM hgu_herramientas_ia
+            WHERE {clause}
+            ORDER BY categoria, orden, nombre
+        """))).fetchall()
+        return [{
+            "id": r.id, "nombre": r.nombre, "url": r.url, "logo_emoji": r.logo_emoji,
+            "descripcion_corta": r.descripcion_corta, "categoria": r.categoria,
+            "empresa": r.empresa, "plan_gratuito": r.plan_gratuito,
+            "nivel_dificultad": r.nivel_dificultad, "privacidad": r.privacidad,
+            "requiere_cuenta": r.requiere_cuenta, "tags": r.tags,
+            "favorito": r.favorito, "valoracion": r.valoracion, "orden": r.orden
+        } for r in rows]
+
+
+# ── H2. Detalle de una herramienta ───────────────────────────
+@app.get("/api/herramientas/{hid}")
+async def detalle_herramienta(hid: int):
+    async with async_session() as s:
+        r = (await s.execute(text(
+            "SELECT * FROM hgu_herramientas_ia WHERE id = :id"
+        ), {"id": hid})).fetchone()
+        if not r:
+            raise HTTPException(404, "Herramienta no encontrada")
+        return {
+            "id": r.id, "nombre": r.nombre, "url": r.url, "logo_emoji": r.logo_emoji,
+            "descripcion_corta": r.descripcion_corta, "descripcion_larga": r.descripcion_larga,
+            "categoria": r.categoria, "empresa": r.empresa,
+            "plan_gratuito": r.plan_gratuito, "plan_pago": r.plan_pago,
+            "ventajas": r.ventajas, "inconvenientes": r.inconvenientes,
+            "casos_uso_fh": r.casos_uso_fh,
+            "nivel_dificultad": r.nivel_dificultad, "privacidad": r.privacidad,
+            "requiere_cuenta": r.requiere_cuenta, "tags": r.tags,
+            "favorito": r.favorito, "nota_usuario": r.nota_usuario,
+            "valoracion": r.valoracion, "orden": r.orden,
+            "created_at": str(r.created_at) if r.created_at else None
+        }
+
+
+# ── H3. Categorías con conteo ────────────────────────────────
+@app.get("/api/herramientas/meta/categorias")
+async def categorias_herramientas():
+    async with async_session() as s:
+        rows = (await s.execute(text("""
+            SELECT categoria, COUNT(*) as total,
+                   COUNT(*) FILTER (WHERE favorito) as favoritas
+            FROM hgu_herramientas_ia
+            GROUP BY categoria
+            ORDER BY total DESC
+        """))).fetchall()
+        LABELS = {
+            "LLM_GENERALISTA": "LLM Generalistas",
+            "BUSQUEDA_CIENTIFICA": "Búsqueda Científica",
+            "GESTION_DOCUMENTAL": "Gestión Documental",
+            "PRESENTACIONES": "Presentaciones",
+            "ESCRITURA": "Escritura",
+            "DESARROLLO": "Desarrollo",
+            "IMAGEN_MULTIMEDIA": "Imagen y Multimedia",
+            "SALUD_FARMA": "Salud y Farmacia"
+        }
+        return [{
+            "categoria": r.categoria,
+            "label": LABELS.get(r.categoria, r.categoria),
+            "total": r.total,
+            "favoritas": r.favoritas
+        } for r in rows]
+
+
+# ── H4. Toggle favorito ──────────────────────────────────────
+@app.post("/api/herramientas/{hid}/toggle-favorito")
+async def toggle_favorito_herramienta(hid: int):
+    async with async_session() as s:
+        r = (await s.execute(text(
+            "UPDATE hgu_herramientas_ia SET favorito = NOT favorito WHERE id = :id RETURNING id, nombre, favorito"
+        ), {"id": hid})).fetchone()
+        await s.commit()
+        if not r:
+            raise HTTPException(404, "Herramienta no encontrada")
+        return {"id": r.id, "nombre": r.nombre, "favorito": r.favorito}
+
+
+# ── H5. Guardar nota de usuario ──────────────────────────────
+@app.post("/api/herramientas/{hid}/nota")
+async def set_nota_herramienta(hid: int, body: dict):
+    nota = body.get("nota", "")
+    async with async_session() as s:
+        r = (await s.execute(text(
+            "UPDATE hgu_herramientas_ia SET nota_usuario = :nota WHERE id = :id RETURNING id, nombre"
+        ), {"id": hid, "nota": nota})).fetchone()
+        await s.commit()
+        if not r:
+            raise HTTPException(404, "Herramienta no encontrada")
+        return {"id": r.id, "nombre": r.nombre, "nota": nota}
+
+
+# ── H6. Guardar valoración ───────────────────────────────────
+@app.post("/api/herramientas/{hid}/valoracion")
+async def set_valoracion_herramienta(hid: int, body: dict):
+    val = body.get("valoracion")
+    if not val or not (1 <= int(val) <= 5):
+        raise HTTPException(400, "Valoración debe ser 1-5")
+    async with async_session() as s:
+        r = (await s.execute(text(
+            "UPDATE hgu_herramientas_ia SET valoracion = :val WHERE id = :id RETURNING id, nombre, valoracion"
+        ), {"id": hid, "val": int(val)})).fetchone()
+        await s.commit()
+        if not r:
+            raise HTTPException(404, "Herramienta no encontrada")
+        return {"id": r.id, "nombre": r.nombre, "valoracion": r.valoracion}
+
+
+# ── H7. Listar favoritas ─────────────────────────────────────
+@app.get("/api/herramientas/mis/favoritos")
+async def favoritos_herramientas():
+    async with async_session() as s:
+        rows = (await s.execute(text("""
+            SELECT id, nombre, url, logo_emoji, descripcion_corta, categoria, empresa,
+                   nivel_dificultad, privacidad, tags, favorito, valoracion, nota_usuario
+            FROM hgu_herramientas_ia
+            WHERE favorito = TRUE
+            ORDER BY categoria, nombre
+        """))).fetchall()
+        return [{
+            "id": r.id, "nombre": r.nombre, "url": r.url, "logo_emoji": r.logo_emoji,
+            "descripcion_corta": r.descripcion_corta, "categoria": r.categoria,
+            "empresa": r.empresa, "nivel_dificultad": r.nivel_dificultad,
+            "privacidad": r.privacidad, "tags": r.tags,
+            "favorito": r.favorito, "valoracion": r.valoracion,
+            "nota_usuario": r.nota_usuario
+        } for r in rows]
+
+
+# ── H8. Estadísticas generales ────────────────────────────────
+@app.get("/api/herramientas/meta/stats")
+async def stats_herramientas():
+    async with async_session() as s:
+        totals = (await s.execute(text("""
+            SELECT
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE favorito) as favoritas,
+                COUNT(*) FILTER (WHERE valoracion IS NOT NULL) as valoradas,
+                ROUND(AVG(valoracion) FILTER (WHERE valoracion IS NOT NULL), 1) as media_valoracion,
+                COUNT(DISTINCT categoria) as categorias,
+                COUNT(*) FILTER (WHERE plan_gratuito IS NOT NULL AND plan_gratuito != '') as con_plan_gratuito,
+                COUNT(*) FILTER (WHERE nivel_dificultad = 'FACIL') as facil,
+                COUNT(*) FILTER (WHERE nivel_dificultad = 'MEDIO') as medio,
+                COUNT(*) FILTER (WHERE nivel_dificultad = 'AVANZADO') as avanzado,
+                COUNT(*) FILTER (WHERE privacidad = 'LOCAL') as privacidad_local
+            FROM hgu_herramientas_ia
+        """))).fetchone()
+        top = (await s.execute(text("""
+            SELECT nombre, logo_emoji, valoracion, categoria
+            FROM hgu_herramientas_ia
+            WHERE valoracion IS NOT NULL
+            ORDER BY valoracion DESC, nombre
+            LIMIT 5
+        """))).fetchall()
+        return {
+            "total": totals.total,
+            "favoritas": totals.favoritas,
+            "valoradas": totals.valoradas,
+            "media_valoracion": float(totals.media_valoracion) if totals.media_valoracion else None,
+            "categorias": totals.categorias,
+            "con_plan_gratuito": totals.con_plan_gratuito,
+            "por_nivel": {"facil": totals.facil, "medio": totals.medio, "avanzado": totals.avanzado},
+            "privacidad_local": totals.privacidad_local,
+            "top_valoradas": [{"nombre": t.nombre, "logo_emoji": t.logo_emoji,
+                               "valoracion": t.valoracion, "categoria": t.categoria} for t in top]
+        }
+
+
+# ── H9. IA — Recomendar herramientas ─────────────────────────
+@app.post("/api/herramientas/ia/recomendar")
+async def ia_recomendar_herramienta(body: dict):
+    necesidad = body.get("necesidad", "")
+    if not necesidad:
+        raise HTTPException(400, "Describe tu necesidad")
+    async with async_session() as s:
+        rows = (await s.execute(text("""
+            SELECT nombre, categoria, descripcion_corta, casos_uso_fh, nivel_dificultad,
+                   plan_gratuito, privacidad, tags
+            FROM hgu_herramientas_ia
+            ORDER BY categoria, nombre
+        """))).fetchall()
+        catalogo = "\n".join([
+            f"- {r.nombre} ({r.categoria}): {r.descripcion_corta} | Nivel: {r.nivel_dificultad} | "
+            f"Privacidad: {r.privacidad} | Gratuito: {r.plan_gratuito or 'No'} | "
+            f"Casos FH: {json.dumps(r.casos_uso_fh, ensure_ascii=False) if r.casos_uso_fh else 'N/A'}"
+            for r in rows
+        ])
+    prompt = f"""{SIGFAR_CONTEXT_PROMPT}
+
+Eres un consultor experto en IA aplicada a farmacia hospitalaria.
+El farmacéutico tiene esta necesidad:
+"{necesidad}"
+
+Catálogo disponible de herramientas IA:
+{catalogo}
+
+Recomienda las 3-5 mejores herramientas para esta necesidad. Para cada una:
+1. Nombre de la herramienta
+2. Por qué es la mejor opción para esta necesidad concreta
+3. Caso de uso específico en farmacia hospitalaria
+4. Nivel de dificultad y si tiene plan gratuito
+5. Consejo práctico para empezar
+
+Responde en español, formato estructurado con encabezados markdown.
+Al final añade una sección "Flujo de trabajo recomendado" combinando las herramientas."""
+
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": "llama-3.3-70b-versatile", "temperature": 0.4,
+                  "messages": [{"role": "user", "content": prompt}]}
+        )
+        data = resp.json()
+    return {
+        "necesidad": necesidad,
+        "recomendacion": data.get("choices", [{}])[0].get("message", {}).get("content", ""),
+        "modelo": "llama-3.3-70b-versatile"
+    }
+
+
+# ── H10. IA — Generar prompt optimizado ──────────────────────
+@app.post("/api/herramientas/ia/generar-prompt")
+async def ia_generar_prompt(body: dict):
+    herramienta = body.get("herramienta", "")
+    tarea = body.get("tarea", "")
+    contexto = body.get("contexto", "")
+    if not herramienta or not tarea:
+        raise HTTPException(400, "Indica herramienta y tarea")
+
+    prompt = f"""{SIGFAR_CONTEXT_PROMPT}
+
+Eres un experto en prompt engineering para farmacia hospitalaria.
+El farmacéutico quiere usar la herramienta "{herramienta}" para la tarea: "{tarea}".
+{f'Contexto adicional: {contexto}' if contexto else ''}
+
+Genera 3 prompts optimizados para esta herramienta y tarea:
+
+1. **Prompt básico**: Directo y funcional
+2. **Prompt avanzado**: Con técnicas de prompt engineering (chain-of-thought, few-shot, etc.)
+3. **Prompt experto**: Máxima calidad, con role-play, formato estructurado y validaciones
+
+Para cada prompt incluye:
+- El prompt completo listo para copiar/pegar
+- Técnica de prompt engineering utilizada
+- Tips para mejorar el resultado
+
+Responde en español. Los prompts deben ser específicos para farmacia hospitalaria."""
+
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"model": "llama-3.3-70b-versatile", "temperature": 0.5,
+                  "messages": [{"role": "user", "content": prompt}]}
+        )
+        data = resp.json()
+    return {
+        "herramienta": herramienta,
+        "tarea": tarea,
+        "prompts": data.get("choices", [{}])[0].get("message", {}).get("content", ""),
+        "modelo": "llama-3.3-70b-versatile"
+    }

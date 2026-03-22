@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Link, Navigate, useParams } from 'react-router-dom'
 import Markdown from 'react-markdown'
-import { Activity, AlertCircle, AlertTriangle, Archive, ArrowLeftRight, BarChart3, BookOpen, Brain, BrainCircuit, Building2, Calculator, CalendarClock, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Circle, Clipboard, ClipboardCopy, Clock, Cpu, Crown, Database, Download, ExternalLink, FileSearch, FileText, Filter, FlaskConical, Gauge, GitBranch, Globe, GraduationCap, Heart, HeartPulse, Home, Hourglass, Hospital, Info, Layers, LayoutDashboard, Lightbulb, Mic, MicOff, MonitorSmartphone, Network, Pill, Plug, Presentation, Radar, RefreshCw, Rocket, ScrollText, Search, Send, Server, Settings, Shield, ShieldAlert, Smartphone, Sparkles, Star, Stethoscope, StickyNote, Tags, Target, Telescope, TrendingDown, TrendingUp, Truck, Users, Volume2, VolumeX, Wallet, Wifi, WifiOff, Wrench, X, XCircle, Zap } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, Archive, ArrowLeftRight, BarChart3, BookOpen, Brain, BrainCircuit, Building2, Calculator, CalendarClock, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Circle, Clipboard, ClipboardCopy, Clock, Copy, Cpu, Crown, Database, Download, ExternalLink, FileSearch, FileText, Filter, FlaskConical, Gauge, GitBranch, Globe, GraduationCap, Heart, HeartPulse, Home, Hourglass, Hospital, Info, Layers, LayoutDashboard, Lightbulb, Lock, MessageSquare, Mic, MicOff, MonitorSmartphone, Network, Pill, Plug, Presentation, Radar, RefreshCw, Rocket, ScrollText, Search, Send, Server, Settings, Shield, ShieldAlert, Smartphone, Sparkles, Star, Stethoscope, StickyNote, Tags, Target, Telescope, TrendingDown, TrendingUp, Truck, Users, Volume2, VolumeX, Wallet, Wand2, Wifi, WifiOff, Wrench, X, XCircle, Zap } from 'lucide-react'
 import './style.css'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -38,6 +38,7 @@ function Nav() {
         <Link to="/propuestas"><span className="nav-icon"><Lightbulb size={16}/></span>Propuestas</Link>
         <Link to="/evidencia"><span className="nav-icon"><GraduationCap size={16}/></span>Evidencia</Link>
         <Link to="/guardias"><span className="nav-icon"><CalendarClock size={16}/></span>Guardias</Link>
+        <Link to="/herramientas"><span className="nav-icon"><Wand2 size={16}/></span>Herramientas IA</Link>
         <Link to="/jefatura"><span className="nav-icon"><Building2 size={16}/></span>Dir. Servicio Farmacia</Link>
         <Link to="/dashboard"><span className="nav-icon"><LayoutDashboard size={16}/></span>Dashboard</Link>
         <Link to="/pacientes"><span className="nav-icon"><Users size={16}/></span>Pacientes</Link>
@@ -3837,6 +3838,416 @@ function GuardiasPage() {
 }
 
 
+/* ═══ HerramientasIAPage ═══ */
+const CATEGORIAS_HERR = {
+  LLM_GENERALISTA: { label: 'LLM Generalistas', icon: Brain, color: '#8b5cf6' },
+  BUSQUEDA_CIENTIFICA: { label: 'Búsqueda Científica', icon: FileSearch, color: '#0ea5e9' },
+  GESTION_DOCUMENTAL: { label: 'Gestión Documental', icon: Archive, color: '#f59e0b' },
+  PRESENTACIONES: { label: 'Presentaciones', icon: Presentation, color: '#ec4899' },
+  ESCRITURA: { label: 'Escritura', icon: ScrollText, color: '#10b981' },
+  DESARROLLO: { label: 'Desarrollo', icon: Cpu, color: '#6366f1' },
+  IMAGEN_MULTIMEDIA: { label: 'Imagen y Multimedia', icon: Sparkles, color: '#f97316' },
+  SALUD_FARMA: { label: 'Salud y Farmacia', icon: HeartPulse, color: '#ef4444' },
+}
+const NIVEL_COLORS = { FACIL: '#10b981', MEDIO: '#f59e0b', AVANZADO: '#ef4444' }
+const PRIVACIDAD_LABELS = { CLOUD_ANONIMIZAR: 'Cloud (anonimizar)', CLOUD_CON_DPA: 'Cloud con DPA', LOCAL: 'Local', MIXTO: 'Mixto' }
+
+function HerramientasIAPage() {
+  const [tab, setTab] = React.useState('catalogo')
+  const [catFilter, setCatFilter] = React.useState('')
+  const [nivelFilter, setNivelFilter] = React.useState('')
+  const [buscar, setBuscar] = React.useState('')
+  const [searchText, setSearchText] = React.useState('')
+  const [selected, setSelected] = React.useState(null)
+  const [detail, setDetail] = React.useState(null)
+  const [loadingDetail, setLoadingDetail] = React.useState(false)
+  const [favoritos, setFavoritos] = React.useState([])
+  const [loadingFav, setLoadingFav] = React.useState(true)
+  const [stats, setStats] = React.useState(null)
+  const [necesidad, setNecesidad] = React.useState('')
+  const [recomendacion, setRecomendacion] = React.useState('')
+  const [loadingIA, setLoadingIA] = React.useState(false)
+  const [promptHerr, setPromptHerr] = React.useState('')
+  const [promptTarea, setPromptTarea] = React.useState('')
+  const [promptResult, setPromptResult] = React.useState('')
+  const [loadingPrompt, setLoadingPrompt] = React.useState(false)
+  const [iaTab, setIaTab] = React.useState('recomendar')
+
+  const params = new URLSearchParams()
+  if (catFilter) params.set('categoria', catFilter)
+  if (nivelFilter) params.set('nivel', nivelFilter)
+  if (buscar) params.set('buscar', buscar)
+  const { data: herramientas, loading } = useFetch(`/api/herramientas?${params.toString()}`)
+  const { data: categorias } = useFetch('/api/herramientas/meta/categorias')
+
+  const loadFavoritos = () => {
+    setLoadingFav(true)
+    fetch(API + '/api/herramientas/mis/favoritos').then(r => r.json()).then(d => { setFavoritos(d); setLoadingFav(false) }).catch(() => setLoadingFav(false))
+  }
+  const loadStats = () => {
+    fetch(API + '/api/herramientas/meta/stats').then(r => r.json()).then(setStats)
+  }
+  React.useEffect(() => { loadFavoritos(); loadStats() }, [])
+
+  const openDetail = (id) => {
+    setLoadingDetail(true)
+    setSelected(id)
+    fetch(API + `/api/herramientas/${id}`).then(r => r.json()).then(d => { setDetail(d); setLoadingDetail(false) })
+  }
+  const closeDetail = () => { setSelected(null); setDetail(null) }
+
+  const toggleFav = async (id) => {
+    await fetch(API + `/api/herramientas/${id}/toggle-favorito`, { method: 'POST' })
+    loadFavoritos()
+    loadStats()
+    if (detail && detail.id === id) openDetail(id)
+  }
+
+  const setValoracion = async (id, val) => {
+    await fetch(API + `/api/herramientas/${id}/valoracion`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ valoracion: val })
+    })
+    loadStats()
+    if (detail && detail.id === id) openDetail(id)
+  }
+
+  const saveNota = async (id, nota) => {
+    await fetch(API + `/api/herramientas/${id}/nota`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nota })
+    })
+  }
+
+  const doSearch = () => setBuscar(searchText)
+
+  const pedirRecomendacion = async () => {
+    if (!necesidad.trim()) return
+    setLoadingIA(true); setRecomendacion('')
+    try {
+      const r = await fetch(API + '/api/herramientas/ia/recomendar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ necesidad })
+      })
+      const d = await r.json()
+      setRecomendacion(d.recomendacion || 'Sin respuesta')
+    } catch { setRecomendacion('Error al consultar IA') }
+    setLoadingIA(false)
+  }
+
+  const generarPrompt = async () => {
+    if (!promptHerr.trim() || !promptTarea.trim()) return
+    setLoadingPrompt(true); setPromptResult('')
+    try {
+      const r = await fetch(API + '/api/herramientas/ia/generar-prompt', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ herramienta: promptHerr, tarea: promptTarea })
+      })
+      const d = await r.json()
+      setPromptResult(d.prompts || 'Sin respuesta')
+    } catch { setPromptResult('Error al generar prompt') }
+    setLoadingPrompt(false)
+  }
+
+  // Group herramientas by category
+  const grouped = React.useMemo(() => {
+    if (!herramientas) return {}
+    const g = {}
+    herramientas.forEach(h => {
+      if (!g[h.categoria]) g[h.categoria] = []
+      g[h.categoria].push(h)
+    })
+    return g
+  }, [herramientas])
+
+  const renderStars = (val, hid, interactive = false) => (
+    <span className="herr-stars">
+      {[1,2,3,4,5].map(n => (
+        <Star key={n} size={14} fill={n <= (val || 0) ? '#f59e0b' : 'none'} color={n <= (val || 0) ? '#f59e0b' : '#ccc'}
+          style={interactive ? { cursor: 'pointer' } : {}}
+          onClick={interactive ? (e) => { e.stopPropagation(); setValoracion(hid, n) } : undefined} />
+      ))}
+    </span>
+  )
+
+  const HerramientaCard = ({ h, compact = false }) => {
+    const cat = CATEGORIAS_HERR[h.categoria] || {}
+    const CatIcon = cat.icon || Wand2
+    return (
+      <div className="herr-card" onClick={() => openDetail(h.id)}>
+        <div className="herr-card-head">
+          <span className="herr-emoji">{h.logo_emoji}</span>
+          <div className="herr-card-title">
+            <strong>{h.nombre}</strong>
+            <span className="herr-empresa">{h.empresa}</span>
+          </div>
+          <button className="herr-fav-btn" onClick={(e) => { e.stopPropagation(); toggleFav(h.id) }}>
+            <Heart size={16} fill={h.favorito ? '#ef4444' : 'none'} color={h.favorito ? '#ef4444' : '#999'} />
+          </button>
+        </div>
+        <p className="herr-desc">{h.descripcion_corta}</p>
+        <div className="herr-card-meta">
+          <span className="herr-badge" style={{ background: cat.color + '20', color: cat.color }}>
+            <CatIcon size={12} /> {cat.label}
+          </span>
+          <span className="herr-badge herr-nivel" style={{ background: NIVEL_COLORS[h.nivel_dificultad] + '20', color: NIVEL_COLORS[h.nivel_dificultad] }}>
+            {h.nivel_dificultad}
+          </span>
+          {h.privacidad === 'LOCAL' && <span className="herr-badge herr-local"><Lock size={12} /> Local</span>}
+        </div>
+        {!compact && <div className="herr-card-foot">
+          {renderStars(h.valoracion, h.id, true)}
+          {h.tags && h.tags.slice(0, 3).map((t, i) => <span key={i} className="herr-tag">#{t}</span>)}
+        </div>}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <h2 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Wand2 size={28} /> Herramientas IA para Farmacia Hospitalaria
+      </h2>
+
+      {/* Stats bar */}
+      {stats && (
+        <div className="herr-stats-bar">
+          <div className="herr-stat"><Wand2 size={18} /><strong>{stats.total}</strong> herramientas</div>
+          <div className="herr-stat"><Heart size={18} color="#ef4444" /><strong>{stats.favoritas}</strong> favoritas</div>
+          <div className="herr-stat"><Star size={18} color="#f59e0b" /><strong>{stats.valoradas}</strong> valoradas</div>
+          <div className="herr-stat"><Layers size={18} /><strong>{stats.categorias}</strong> categorías</div>
+          {stats.media_valoracion && <div className="herr-stat"><Star size={18} fill="#f59e0b" color="#f59e0b" /><strong>{stats.media_valoracion}</strong> media</div>}
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="sf-tabs" style={{ marginBottom: 16 }}>
+        {[['catalogo','Catálogo',Layers],['favoritas','Mis Favoritas',Heart],['ia','IA Asistente',Sparkles]].map(([k,l,Ic]) => (
+          <button key={k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}>
+            <Ic size={16} /> {l}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab Catálogo ── */}
+      {tab === 'catalogo' && (
+        <div>
+          {/* Filters */}
+          <div className="herr-filters">
+            <div className="herr-search">
+              <Search size={16} />
+              <input placeholder="Buscar herramienta..." value={searchText} onChange={e => setSearchText(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && doSearch()} />
+              <button onClick={doSearch}>Buscar</button>
+            </div>
+            <select value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+              <option value="">Todas las categorías</option>
+              {categorias && categorias.map(c => (
+                <option key={c.categoria} value={c.categoria}>{c.label} ({c.total})</option>
+              ))}
+            </select>
+            <select value={nivelFilter} onChange={e => setNivelFilter(e.target.value)}>
+              <option value="">Todos los niveles</option>
+              <option value="FACIL">Fácil</option>
+              <option value="MEDIO">Medio</option>
+              <option value="AVANZADO">Avanzado</option>
+            </select>
+            {(catFilter || nivelFilter || buscar) && (
+              <button className="herr-clear-btn" onClick={() => { setCatFilter(''); setNivelFilter(''); setBuscar(''); setSearchText('') }}>
+                <X size={14} /> Limpiar filtros
+              </button>
+            )}
+          </div>
+
+          {loading ? <p>Cargando herramientas...</p> : (
+            <div>
+              {Object.keys(grouped).map(cat => {
+                const info = CATEGORIAS_HERR[cat] || {}
+                const CatIcon = info.icon || Wand2
+                return (
+                  <div key={cat} className="herr-cat-section">
+                    <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, color: info.color }}>
+                      <CatIcon size={20} /> {info.label} <span className="herr-cat-count">{grouped[cat].length}</span>
+                    </h3>
+                    <div className="herr-grid">
+                      {grouped[cat].map(h => <HerramientaCard key={h.id} h={h} />)}
+                    </div>
+                  </div>
+                )
+              })}
+              {herramientas && herramientas.length === 0 && <p style={{ color: '#999' }}>No se encontraron herramientas con estos filtros.</p>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab Favoritas ── */}
+      {tab === 'favoritas' && (
+        <div>
+          {loadingFav ? <p>Cargando favoritas...</p> : favoritos.length === 0 ? (
+            <div className="herr-empty">
+              <Heart size={48} color="#ccc" />
+              <p>No tienes herramientas favoritas aún.</p>
+              <p style={{ color: '#999', fontSize: '.9rem' }}>Explora el catálogo y marca con <Heart size={14} color="#ef4444" /> las que más te gusten.</p>
+            </div>
+          ) : (
+            <div>
+              <p style={{ color: '#666', marginBottom: 12 }}>{favoritos.length} herramienta{favoritos.length !== 1 ? 's' : ''} favorita{favoritos.length !== 1 ? 's' : ''}</p>
+              <div className="herr-grid">
+                {favoritos.map(h => <HerramientaCard key={h.id} h={{ ...h, favorito: true }} />)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab IA Asistente ── */}
+      {tab === 'ia' && (
+        <div>
+          <div className="sf-tabs herr-ia-tabs">
+            <button className={iaTab === 'recomendar' ? 'active' : ''} onClick={() => setIaTab('recomendar')}>
+              <Sparkles size={16} /> Recomendar herramienta
+            </button>
+            <button className={iaTab === 'prompt' ? 'active' : ''} onClick={() => setIaTab('prompt')}>
+              <MessageSquare size={16} /> Generar prompt
+            </button>
+          </div>
+
+          {iaTab === 'recomendar' && (
+            <div className="herr-ia-panel">
+              <h3><Sparkles size={20} /> ¿Qué necesitas hacer?</h3>
+              <p style={{ color: '#666', fontSize: '.9rem' }}>Describe tu necesidad y la IA recomendará las mejores herramientas del catálogo.</p>
+              <textarea className="herr-ia-input" rows={3} placeholder="Ej: Necesito resumir artículos de PubMed sobre PROA y generar una presentación para el comité de infecciones..."
+                value={necesidad} onChange={e => setNecesidad(e.target.value)} />
+              <button className="btn-primary" onClick={pedirRecomendacion} disabled={loadingIA || !necesidad.trim()}>
+                {loadingIA ? <><RefreshCw size={16} className="spin" /> Analizando catálogo...</> : <><Sparkles size={16} /> Recomendar herramientas</>}
+              </button>
+              {recomendacion && (
+                <div className="herr-ia-result">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <strong><Sparkles size={16} /> Recomendación IA</strong>
+                    <button className="herr-copy-btn" onClick={() => navigator.clipboard.writeText(recomendacion)}>
+                      <Copy size={14} /> Copiar
+                    </button>
+                  </div>
+                  <Markdown>{recomendacion}</Markdown>
+                </div>
+              )}
+            </div>
+          )}
+
+          {iaTab === 'prompt' && (
+            <div className="herr-ia-panel">
+              <h3><MessageSquare size={20} /> Generador de prompts</h3>
+              <p style={{ color: '#666', fontSize: '.9rem' }}>Genera prompts optimizados para cualquier herramienta IA aplicados a farmacia hospitalaria.</p>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                <input className="herr-ia-field" placeholder="Herramienta (ej: ChatGPT, Claude, Perplexity...)"
+                  value={promptHerr} onChange={e => setPromptHerr(e.target.value)} />
+                <input className="herr-ia-field" placeholder="Tarea (ej: Revisar interacciones de vancomicina...)"
+                  value={promptTarea} onChange={e => setPromptTarea(e.target.value)} style={{ flex: 2 }} />
+              </div>
+              <button className="btn-primary" onClick={generarPrompt} disabled={loadingPrompt || !promptHerr.trim() || !promptTarea.trim()}>
+                {loadingPrompt ? <><RefreshCw size={16} className="spin" /> Generando prompts...</> : <><MessageSquare size={16} /> Generar 3 prompts</>}
+              </button>
+              {promptResult && (
+                <div className="herr-ia-result">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <strong><MessageSquare size={16} /> Prompts generados</strong>
+                    <button className="herr-copy-btn" onClick={() => navigator.clipboard.writeText(promptResult)}>
+                      <Copy size={14} /> Copiar todo
+                    </button>
+                  </div>
+                  <Markdown>{promptResult}</Markdown>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Detail slide panel ── */}
+      {selected && (
+        <div className="slide-panel">
+          <button onClick={closeDetail} style={{ float: 'right', background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+          {loadingDetail ? <p>Cargando...</p> : detail && (
+            <div className="herr-detail">
+              <div className="herr-detail-head">
+                <span style={{ fontSize: '2rem' }}>{detail.logo_emoji}</span>
+                <div>
+                  <h3 style={{ margin: 0 }}>{detail.nombre}</h3>
+                  <span style={{ color: '#666' }}>{detail.empresa}</span>
+                </div>
+              </div>
+
+              <div className="herr-detail-actions">
+                <button onClick={() => toggleFav(detail.id)} className={`herr-fav-btn-lg ${detail.favorito ? 'active' : ''}`}>
+                  <Heart size={18} fill={detail.favorito ? '#ef4444' : 'none'} color={detail.favorito ? '#ef4444' : '#666'} />
+                  {detail.favorito ? 'Favorita' : 'Marcar favorita'}
+                </button>
+                {renderStars(detail.valoracion, detail.id, true)}
+                <a href={detail.url} target="_blank" rel="noreferrer" className="herr-ext-link">
+                  <ExternalLink size={14} /> Abrir web
+                </a>
+              </div>
+
+              <p>{detail.descripcion_larga || detail.descripcion_corta}</p>
+
+              <div className="herr-detail-meta">
+                <div><strong>Categoría:</strong> {(CATEGORIAS_HERR[detail.categoria] || {}).label}</div>
+                <div><strong>Nivel:</strong> <span style={{ color: NIVEL_COLORS[detail.nivel_dificultad] }}>{detail.nivel_dificultad}</span></div>
+                <div><strong>Privacidad:</strong> {PRIVACIDAD_LABELS[detail.privacidad] || detail.privacidad}</div>
+                <div><strong>Requiere cuenta:</strong> {detail.requiere_cuenta ? 'Sí' : 'No'}</div>
+              </div>
+
+              {detail.plan_gratuito && <div className="herr-detail-plan"><strong>Plan gratuito:</strong> {detail.plan_gratuito}</div>}
+              {detail.plan_pago && <div className="herr-detail-plan"><strong>Plan de pago:</strong> {detail.plan_pago}</div>}
+
+              {detail.ventajas && detail.ventajas.length > 0 && (
+                <div className="herr-detail-section">
+                  <h4><CheckCircle2 size={16} color="#10b981" /> Ventajas</h4>
+                  <ul>{detail.ventajas.map((v, i) => <li key={i}>{v}</li>)}</ul>
+                </div>
+              )}
+
+              {detail.inconvenientes && detail.inconvenientes.length > 0 && (
+                <div className="herr-detail-section">
+                  <h4><AlertCircle size={16} color="#ef4444" /> Inconvenientes</h4>
+                  <ul>{detail.inconvenientes.map((v, i) => <li key={i}>{v}</li>)}</ul>
+                </div>
+              )}
+
+              {detail.casos_uso_fh && detail.casos_uso_fh.length > 0 && (
+                <div className="herr-detail-section">
+                  <h4><FlaskConical size={16} color="#0ea5e9" /> Casos de uso en Farmacia Hospitalaria</h4>
+                  {detail.casos_uso_fh.map((c, i) => (
+                    <div key={i} className="herr-caso">
+                      <strong>{c.titulo}</strong>
+                      <p>{c.descripcion}</p>
+                      {c.dominio && <span className="herr-badge herr-dominio">{c.dominio}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {detail.tags && detail.tags.length > 0 && (
+                <div className="herr-detail-section">
+                  <h4><Tags size={16} /> Tags</h4>
+                  <div className="herr-tags">{detail.tags.map((t, i) => <span key={i} className="herr-tag">#{t}</span>)}</div>
+                </div>
+              )}
+
+              <div className="herr-detail-section">
+                <h4><StickyNote size={16} /> Nota personal</h4>
+                <textarea className="herr-nota" rows={3} defaultValue={detail.nota_usuario || ''}
+                  placeholder="Escribe tu nota sobre esta herramienta..."
+                  onBlur={e => saveNota(detail.id, e.target.value)} />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 /* ═══ App ═══ */
 function App() {
   return (
@@ -3858,6 +4269,7 @@ function App() {
           <Route path="/propuestas" element={<PropuestasEstrategicas />} />
           <Route path="/evidencia" element={<EvidenciaPage />} />
           <Route path="/guardias" element={<GuardiasPage />} />
+          <Route path="/herramientas" element={<HerramientasIAPage />} />
         </Routes>
       </main>
     </BrowserRouter>
