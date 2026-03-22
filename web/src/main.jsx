@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Link, Navigate, useParams } from 'react-router-dom'
 import Markdown from 'react-markdown'
-import { Activity, AlertCircle, AlertTriangle, Archive, BarChart3, BookOpen, Brain, BrainCircuit, Building2, Calculator, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, Clipboard, ClipboardCopy, Clock, Cpu, Crown, Database, ExternalLink, FileSearch, FileText, Filter, FlaskConical, Gauge, GitBranch, Globe, GraduationCap, Heart, HeartPulse, Home, Hourglass, Hospital, Info, Layers, LayoutDashboard, Lightbulb, Mic, MicOff, MonitorSmartphone, Network, Pill, Plug, Presentation, Radar, RefreshCw, Rocket, ScrollText, Search, Send, Server, Settings, Shield, ShieldAlert, Smartphone, Sparkles, Star, Stethoscope, StickyNote, Tags, Target, Telescope, TrendingDown, TrendingUp, Truck, Users, Volume2, VolumeX, Wallet, Wifi, WifiOff, Wrench, X, XCircle, Zap } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, Archive, ArrowLeftRight, BarChart3, BookOpen, Brain, BrainCircuit, Building2, Calculator, CalendarClock, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, Circle, Clipboard, ClipboardCopy, Clock, Cpu, Crown, Database, Download, ExternalLink, FileSearch, FileText, Filter, FlaskConical, Gauge, GitBranch, Globe, GraduationCap, Heart, HeartPulse, Home, Hourglass, Hospital, Info, Layers, LayoutDashboard, Lightbulb, Mic, MicOff, MonitorSmartphone, Network, Pill, Plug, Presentation, Radar, RefreshCw, Rocket, ScrollText, Search, Send, Server, Settings, Shield, ShieldAlert, Smartphone, Sparkles, Star, Stethoscope, StickyNote, Tags, Target, Telescope, TrendingDown, TrendingUp, Truck, Users, Volume2, VolumeX, Wallet, Wifi, WifiOff, Wrench, X, XCircle, Zap } from 'lucide-react'
 import './style.css'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -37,6 +37,7 @@ function Nav() {
         <Link to="/ml"><span className="nav-icon"><BrainCircuit size={16}/></span>Algoritmos ML</Link>
         <Link to="/propuestas"><span className="nav-icon"><Lightbulb size={16}/></span>Propuestas</Link>
         <Link to="/evidencia"><span className="nav-icon"><GraduationCap size={16}/></span>Evidencia</Link>
+        <Link to="/guardias"><span className="nav-icon"><CalendarClock size={16}/></span>Guardias</Link>
         <Link to="/jefatura"><span className="nav-icon"><Building2 size={16}/></span>Dir. Servicio Farmacia</Link>
         <Link to="/dashboard"><span className="nav-icon"><LayoutDashboard size={16}/></span>Dashboard</Link>
         <Link to="/pacientes"><span className="nav-icon"><Users size={16}/></span>Pacientes</Link>
@@ -3263,6 +3264,579 @@ function EvidenciaPage() {
   )
 }
 
+/* ═══ GuardiasPage ═══ */
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+const DIAS_SEMANA = ['L','M','X','J','V','S','D']
+const TIPO_BADGE_CLASS = {
+  LN:'badge-ln', LJ:'badge-lj', LV:'badge-lv', LS:'badge-ls', LD:'badge-ld',
+  LF:'badge-lf', LFE:'badge-lfe', PN:'badge-pn', PJ:'badge-pj', PV:'badge-pv',
+  PS:'badge-ps', PF:'badge-pf', PFE:'badge-pfe'
+}
+
+function GuardiasPage() {
+  const [tab, setTab] = React.useState('calendario')
+  const hoy = new Date()
+  const [mes, setMes] = React.useState(hoy.getMonth() + 1)
+  const [anio, setAnio] = React.useState(hoy.getFullYear())
+  const [filtroFarm, setFiltroFarm] = React.useState('')
+  const [selectedCell, setSelectedCell] = React.useState(null)
+  const [yoSoy, setYoSoy] = React.useState(null)
+  const [showIntModal, setShowIntModal] = React.useState(false)
+  const [intForm, setIntForm] = React.useState({ solicitante_id:'', receptor_id:'', guardia_ofrecida_id:'', guardia_pedida_id:'', motivo:'' })
+  const [dryResult, setDryResult] = React.useState(null)
+  const [iaLoading, setIaLoading] = React.useState(false)
+  const [iaSugerencias, setIaSugerencias] = React.useState(null)
+  const [refresh, setRefresh] = React.useState(0)
+
+  const { data: farms } = useFetch('/api/guardias/farmaceuticos')
+  const { data: calData } = useFetch(`/api/guardias/calendario/mes/${anio}/${mes}?r=${refresh}`)
+  const { data: hoyData } = useFetch(`/api/guardias/calendario/hoy?r=${refresh}`)
+  const { data: equidad } = useFetch(`/api/guardias/equidad?r=${refresh}`)
+  const { data: ruedas } = useFetch('/api/guardias/ruedas')
+  const { data: conflictos } = useFetch(`/api/guardias/conflictos?r=${refresh}`)
+  const { data: intercambios } = useFetch(`/api/guardias/intercambios?r=${refresh}`)
+  const { data: statsGlobal } = useFetch(`/api/guardias/stats?r=${refresh}`)
+
+  // Mi calendario
+  const { data: miCal } = useFetch(yoSoy ? `/api/guardias/farmaceuticos/${yoSoy}` : null)
+
+  const cambiarMes = (delta) => {
+    let m = mes + delta, a = anio
+    if (m > 12) { m = 1; a++ }
+    if (m < 1) { m = 12; a-- }
+    setMes(m); setAnio(a); setSelectedCell(null)
+  }
+
+  const exportIcal = () => {
+    if (!yoSoy) return
+    window.open(`${API}/api/guardias/exportar-ical/${yoSoy}`, '_blank')
+  }
+
+  const copiarResumen = () => {
+    if (!miCal) return
+    const lines = miCal.guardias.map(g => `${g.fecha} ${g.dia_semana} ${g.tipo_dia} ${g.estado}`)
+    navigator.clipboard.writeText(`Guardias ${miCal.nombre} 2026\n\n${lines.join('\n')}`)
+  }
+
+  const crearIntercambio = async () => {
+    const resp = await fetch(`${API}/api/guardias/intercambios`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ...intForm, solicitante_id: +intForm.solicitante_id, receptor_id: +intForm.receptor_id, guardia_ofrecida_id: +intForm.guardia_ofrecida_id, guardia_pedida_id: +intForm.guardia_pedida_id })
+    })
+    if (resp.ok) { setShowIntModal(false); setDryResult(null); setRefresh(r => r+1) }
+  }
+
+  const validarDryRun = async () => {
+    if (!intForm.solicitante_id || !intForm.receptor_id || !intForm.guardia_ofrecida_id || !intForm.guardia_pedida_id) return
+    const resp = await fetch(`${API}/api/guardias/intercambios`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ...intForm, solicitante_id: +intForm.solicitante_id, receptor_id: +intForm.receptor_id, guardia_ofrecida_id: +intForm.guardia_ofrecida_id, guardia_pedida_id: +intForm.guardia_pedida_id, dry_run: true })
+    })
+    if (resp.ok) setDryResult(await resp.json())
+  }
+
+  const accionIntercambio = async (id, accion) => {
+    await fetch(`${API}/api/guardias/intercambios/${id}/${accion}`, { method:'POST' })
+    setRefresh(r => r+1)
+  }
+
+  const pedirIA = async () => {
+    setIaLoading(true)
+    try {
+      const resp = await fetch(`${API}/api/guardias/ia/sugerir-intercambio`, { method:'POST' })
+      if (resp.ok) setIaSugerencias(await resp.json())
+    } finally { setIaLoading(false) }
+  }
+
+  // Guardias del receptor para modal intercambio
+  const [recGuardias, setRecGuardias] = React.useState([])
+  React.useEffect(() => {
+    if (intForm.receptor_id) {
+      fetch(`${API}/api/guardias/farmaceuticos/${intForm.receptor_id}`)
+        .then(r => r.json()).then(d => setRecGuardias(d.guardias?.filter(g => g.fecha >= new Date().toISOString().slice(0,10)) || []))
+    } else setRecGuardias([])
+  }, [intForm.receptor_id])
+
+  const solGuardias = React.useMemo(() => {
+    if (!miCal) return []
+    return miCal.guardias?.filter(g => g.fecha >= new Date().toISOString().slice(0,10)) || []
+  }, [miCal])
+
+  const tabs = [
+    { id:'calendario', label:'Calendario', icon:<CalendarDays size={15}/> },
+    { id:'mi', label:'Mi Calendario', icon:<Users size={15}/> },
+    { id:'intercambios', label:'Intercambios', icon:<ArrowLeftRight size={15}/> },
+    { id:'estadisticas', label:'Estadísticas', icon:<BarChart3 size={15}/> },
+  ]
+
+  return (
+    <div>
+      <div className="evidencia-header">
+        <div>
+          <h2 style={{margin:0,display:'flex',alignItems:'center',gap:8}}><CalendarClock size={22}/> Guardias del Servicio</h2>
+          <p style={{margin:'4px 0 0',fontSize:'.85rem',color:'#666'}}>Calendario · Intercambios · Equidad · 15 farmacéuticos × 365 días</p>
+        </div>
+      </div>
+
+      <div className="ev-tabs" style={{display:'flex',gap:4,marginBottom:16,flexWrap:'wrap'}}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={tab === t.id ? 'ev-btn-primary' : 'ev-btn-secondary'}
+            style={{display:'flex',alignItems:'center',gap:4}}>
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ═══ TAB 1: CALENDARIO ═══ */}
+      {tab === 'calendario' && (
+        <div>
+          {/* Tarjeta HOY */}
+          {hoyData && hoyData.farm_nombre && (
+            <div className="hoy-card" style={{marginBottom:16}}>
+              <div style={{fontSize:'.85rem',opacity:.7}}>Hoy de guardia</div>
+              <div className="hoy-nombre">{hoyData.farm_nombre}</div>
+              <div className="hoy-tipo">{hoyData.tipo_dia} — {hoyData.es_localizada ? 'Localizada' : 'Presencial'}</div>
+            </div>
+          )}
+
+          {/* Controles mes */}
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12,flexWrap:'wrap'}}>
+            <button onClick={() => cambiarMes(-1)} className="ev-btn-secondary"><ChevronLeft size={16}/></button>
+            <h3 style={{margin:0,minWidth:160,textAlign:'center'}}>{MESES[mes-1]} {anio}</h3>
+            <button onClick={() => cambiarMes(1)} className="ev-btn-secondary"><ChevronRight size={16}/></button>
+            <select value={filtroFarm} onChange={e => setFiltroFarm(e.target.value)} className="ev-input" style={{maxWidth:180}}>
+              <option value="">Todos</option>
+              {farms?.map(f => <option key={f.id} value={f.codigo}>{f.nombre}</option>)}
+            </select>
+          </div>
+
+          {/* Grid cabecera */}
+          <div className="guardias-grid">
+            {DIAS_SEMANA.map(d => <div key={d} className="guardias-header">{d}</div>)}
+          </div>
+
+          {/* Grid celdas */}
+          <div className="guardias-grid">
+            {calData?.celdas?.map((c, i) => {
+              if (filtroFarm && c.farm_codigo !== filtroFarm && c.es_mes_actual) {
+                return <div key={i} className={`guardias-cell${c.es_weekend ? ' weekend' : ''}${!c.es_mes_actual ? ' other-month' : ''}`}>
+                  <span className="day-num">{c.dia_del_mes}</span>
+                </div>
+              }
+              return (
+                <div key={i}
+                  className={`guardias-cell${c.es_hoy ? ' today' : ''}${c.es_weekend ? ' weekend' : ''}${!c.es_mes_actual ? ' other-month' : ''}`}
+                  onClick={() => c.tipo_dia && setSelectedCell(c)}>
+                  <span className="day-num">{c.dia_del_mes}</span>
+                  {c.tipo_dia && (
+                    <div style={{marginTop:16,textAlign:'center'}}>
+                      <span className={`badge-guardia ${TIPO_BADGE_CLASS[c.tipo_dia] || ''}`}>{c.tipo_dia}</span>
+                      <div className="farm-name" style={c.color_hex ? {color: c.color_hex, fontWeight:600} : {}}>{c.farm_codigo}</div>
+                    </div>
+                  )}
+                  {c.es_hoy && <span className="hoy-label">HOY</span>}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Slide panel */}
+          {selectedCell && (
+            <div className="slide-panel">
+              <button onClick={() => setSelectedCell(null)} style={{float:'right',background:'none',border:'none',cursor:'pointer'}}><X size={20}/></button>
+              <h3 style={{margin:'0 0 16px',color:'#1a3a2a'}}>{selectedCell.fecha}</h3>
+              <p><strong>Día:</strong> {selectedCell.dia_semana}</p>
+              <p><strong>Tipo:</strong> <span className={`badge-guardia ${TIPO_BADGE_CLASS[selectedCell.tipo_dia]||''}`}>{selectedCell.tipo_dia}</span></p>
+              <p><strong>Farmacéutico:</strong> {selectedCell.farm_nombre}</p>
+              <p><strong>Categoría:</strong> {selectedCell.es_localizada ? 'Localizada' : 'Presencial'}</p>
+              <button className="ev-btn-primary" style={{marginTop:16}} onClick={() => { setTab('intercambios'); setShowIntModal(true); setSelectedCell(null) }}>
+                <ArrowLeftRight size={14}/> Solicitar intercambio
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ TAB 2: MI CALENDARIO ═══ */}
+      {tab === 'mi' && (
+        <div>
+          <div style={{display:'flex',gap:12,alignItems:'center',marginBottom:16,flexWrap:'wrap'}}>
+            <span style={{fontWeight:600}}>Yo soy:</span>
+            <select value={yoSoy || ''} onChange={e => setYoSoy(e.target.value || null)} className="ev-input" style={{maxWidth:220}}>
+              <option value="">Seleccionar...</option>
+              {farms?.filter(f => f.rol !== 'CONTRATO_VERANO').map(f => <option key={f.id} value={f.id}>{f.nombre}</option>)}
+            </select>
+            {yoSoy && <>
+              <button className="ev-btn-secondary" onClick={exportIcal}><Download size={14}/> Exportar iCal</button>
+              <button className="ev-btn-secondary" onClick={copiarResumen}><ClipboardCopy size={14}/> Copiar resumen</button>
+            </>}
+          </div>
+
+          {miCal && (
+            <div>
+              {/* Próxima guardia */}
+              {miCal.proxima_guardia && (
+                <div className="hoy-card" style={{marginBottom:16}}>
+                  <div style={{fontSize:'.85rem',opacity:.7}}>Tu próxima guardia</div>
+                  <div className="hoy-nombre">{miCal.proxima_guardia.fecha}</div>
+                  <div className="hoy-tipo">{miCal.proxima_guardia.tipo}
+                    {(() => {
+                      const d = new Date(miCal.proxima_guardia.fecha)
+                      const diff = Math.ceil((d - new Date()) / 86400000)
+                      return diff > 0 ? ` (faltan ${diff} días)` : diff === 0 ? ' (HOY)' : ''
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* Resumen lateral + lista */}
+              <div style={{display:'grid',gridTemplateColumns:'280px 1fr',gap:16}}>
+                {/* Sidebar */}
+                <div className="ev-card">
+                  <h4 style={{margin:'0 0 12px'}}>Resumen {miCal.nombre}</h4>
+                  <div style={{fontSize:'.85rem',lineHeight:2}}>
+                    <div>Total guardias: <strong>{miCal.guardias?.length || 0}</strong></div>
+                    <div>Localizadas: <strong>{miCal.guardias?.filter(g=>g.es_localizada).length || 0}</strong></div>
+                    <div>Presenciales: <strong>{miCal.guardias?.filter(g=>g.es_presencial).length || 0}</strong></div>
+                    <div>Media mensual: <strong>{((miCal.guardias?.length || 0) / 12).toFixed(1)}</strong></div>
+                  </div>
+                  {/* Mini bars por tipo */}
+                  <div style={{marginTop:12}}>
+                    {miCal.stats_por_tipo && Object.entries(miCal.stats_por_tipo).sort().map(([t,n]) => (
+                      <div key={t} style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
+                        <span className={`badge-guardia ${TIPO_BADGE_CLASS[t]||''}`} style={{minWidth:36,textAlign:'center'}}>{t}</span>
+                        <div style={{flex:1,background:'#f0ede6',borderRadius:4,height:8}}>
+                          <div style={{width:`${Math.min(n*8,100)}%`,height:'100%',background:'#1a3a2a',borderRadius:4}}></div>
+                        </div>
+                        <span style={{fontSize:'.75rem',color:'#888',minWidth:16}}>{n}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Lista guardias agrupada por mes */}
+                <div>
+                  {[...Array(12)].map((_,mi) => {
+                    const gMes = miCal.guardias?.filter(g => g.mes === mi+1) || []
+                    if (gMes.length === 0) return null
+                    return (
+                      <div key={mi} style={{marginBottom:12}}>
+                        <h4 style={{margin:'0 0 6px',color:'#1a3a2a',borderBottom:'1px solid #e0ddd5',paddingBottom:4}}>
+                          {MESES[mi]} ({gMes.length})
+                        </h4>
+                        <table className="ev-table" style={{width:'100%'}}>
+                          <tbody>
+                            {gMes.map(g => (
+                              <tr key={g.id}>
+                                <td style={{width:100}}>{g.fecha}</td>
+                                <td style={{width:30}}>{g.dia_semana}</td>
+                                <td><span className={`badge-guardia ${TIPO_BADGE_CLASS[g.tipo_dia]||''}`}>{g.tipo_dia}</span></td>
+                                <td style={{fontSize:'.75rem',color:'#888'}}>{g.estado}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ TAB 3: INTERCAMBIOS ═══ */}
+      {tab === 'intercambios' && (
+        <div>
+          <button className="ev-btn-primary" onClick={() => { setShowIntModal(true); setDryResult(null) }} style={{marginBottom:16}}>
+            <ArrowLeftRight size={14}/> Nuevo intercambio
+          </button>
+
+          {intercambios && intercambios.length > 0 ? (
+            <div className="evidencia-grid">
+              {intercambios.map(inter => (
+                <div key={inter.id} className="ev-card">
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                    <span style={{fontWeight:700,fontSize:'.85rem'}}>{inter.solicitante_codigo} <span className="intercambio-arrow">⇄</span> {inter.receptor_codigo}</span>
+                    <span className={`badge-guardia badge-int-${inter.estado?.toLowerCase()}`}>{inter.estado}</span>
+                  </div>
+                  <div style={{fontSize:'.8rem',color:'#555',marginBottom:6}}>
+                    <div>Ofrece: {inter.fecha_ofrecida} <span className={`badge-guardia ${TIPO_BADGE_CLASS[inter.tipo_ofrecida]||''}`}>{inter.tipo_ofrecida}</span></div>
+                    <div>Pide: {inter.fecha_pedida} <span className={`badge-guardia ${TIPO_BADGE_CLASS[inter.tipo_pedida]||''}`}>{inter.tipo_pedida}</span></div>
+                  </div>
+                  {inter.motivo && <div style={{fontSize:'.75rem',color:'#888',marginBottom:6}}>"{inter.motivo}"</div>}
+
+                  {/* Validación reglas */}
+                  {inter.validacion_reglas && (
+                    <div style={{marginTop:6,borderTop:'1px solid #e0ddd5',paddingTop:6}}>
+                      {(typeof inter.validacion_reglas === 'string' ? JSON.parse(inter.validacion_reglas) : inter.validacion_reglas).map((v,i) => (
+                        <div key={i} className="regla-check">
+                          {v.cumple ? <CheckCircle2 size={13} className="regla-ok"/> : v.severidad === 'HARD' ? <XCircle size={13} className="regla-fail"/> : <AlertTriangle size={13} className="regla-warn"/>}
+                          <span style={{fontSize:'.75rem'}}>R{v.regla_num}: {v.cumple ? 'OK' : v.mensaje}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {inter.estado === 'PENDIENTE' && (
+                    <div style={{display:'flex',gap:6,marginTop:8}}>
+                      <button className="ev-btn-primary" style={{fontSize:'.75rem'}} onClick={() => accionIntercambio(inter.id, 'aceptar')}>Aceptar</button>
+                      <button className="ev-btn-secondary" style={{fontSize:'.75rem'}} onClick={() => accionIntercambio(inter.id, 'rechazar')}>Rechazar</button>
+                    </div>
+                  )}
+                  {inter.estado === 'ACEPTADA' && !inter.cumple_reglas && (
+                    <button className="ev-btn-primary" style={{fontSize:'.75rem',marginTop:8}} onClick={() => accionIntercambio(inter.id, 'validar')}>
+                      <Shield size={12}/> Validar (Jefa)
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="ev-card" style={{textAlign:'center',color:'#888',padding:32}}>
+              <ArrowLeftRight size={32} style={{opacity:.3,marginBottom:8}}/>
+              <div>No hay intercambios registrados</div>
+            </div>
+          )}
+
+          {/* Modal nuevo intercambio */}
+          {showIntModal && (
+            <div className="ev-modal-overlay" onClick={() => setShowIntModal(false)}>
+              <div className="ev-modal" onClick={e => e.stopPropagation()} style={{maxWidth:500}}>
+                <h3 style={{margin:'0 0 16px',color:'#1a3a2a'}}>Nuevo Intercambio</h3>
+                <div style={{display:'grid',gap:10}}>
+                  <div>
+                    <label style={{fontSize:'.8rem',fontWeight:600}}>Mi guardia a ofrecer:</label>
+                    <select className="ev-input" value={intForm.solicitante_id ? `${intForm.solicitante_id}|${intForm.guardia_ofrecida_id}` : ''}
+                      onChange={e => { const [sid,gid] = e.target.value.split('|'); setIntForm({...intForm, solicitante_id:sid, guardia_ofrecida_id:gid}) }}>
+                      <option value="">Seleccionar...</option>
+                      {farms?.filter(f=>f.rol!=='CONTRATO_VERANO').map(f =>
+                        <optgroup key={f.id} label={f.nombre}>
+                          {/* Will load on selection */}
+                        </optgroup>
+                      )}
+                    </select>
+                    {yoSoy && solGuardias.length > 0 && (
+                      <select className="ev-input" style={{marginTop:4}} value={intForm.guardia_ofrecida_id}
+                        onChange={e => setIntForm({...intForm, solicitante_id: yoSoy, guardia_ofrecida_id: e.target.value})}>
+                        <option value="">Mi guardia...</option>
+                        {solGuardias.map(g => <option key={g.id} value={g.id}>{g.fecha} {g.tipo_dia} ({g.dia_semana})</option>)}
+                      </select>
+                    )}
+                  </div>
+                  <div>
+                    <label style={{fontSize:'.8rem',fontWeight:600}}>Farmacéutico receptor:</label>
+                    <select className="ev-input" value={intForm.receptor_id} onChange={e => setIntForm({...intForm, receptor_id:e.target.value, guardia_pedida_id:''})}>
+                      <option value="">Seleccionar...</option>
+                      {farms?.filter(f => f.rol !== 'CONTRATO_VERANO' && String(f.id) !== String(yoSoy)).map(f =>
+                        <option key={f.id} value={f.id}>{f.nombre}</option>
+                      )}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{fontSize:'.8rem',fontWeight:600}}>Guardia que pido a cambio:</label>
+                    <select className="ev-input" value={intForm.guardia_pedida_id} onChange={e => setIntForm({...intForm, guardia_pedida_id: e.target.value})}>
+                      <option value="">Seleccionar...</option>
+                      {recGuardias.map(g => <option key={g.id} value={g.id}>{g.fecha} {g.tipo_dia} ({g.dia_semana})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{fontSize:'.8rem',fontWeight:600}}>Motivo (opcional):</label>
+                    <textarea className="ev-input" rows={2} value={intForm.motivo} onChange={e => setIntForm({...intForm, motivo: e.target.value})} placeholder="Motivo del intercambio..."/>
+                  </div>
+                  <button className="ev-btn-secondary" onClick={validarDryRun}>Validar reglas</button>
+
+                  {dryResult && (
+                    <div style={{border:'1px solid #e0ddd5',borderRadius:8,padding:12}}>
+                      <div style={{fontWeight:700,marginBottom:6,color: dryResult.cumple_reglas ? '#16a34a' : '#dc2626'}}>
+                        {dryResult.cumple_reglas ? '✓ Cumple reglas HARD' : '✗ Viola reglas HARD'}
+                      </div>
+                      {dryResult.validacion_reglas?.map((v,i) => (
+                        <div key={i} className="regla-check">
+                          {v.cumple ? <CheckCircle2 size={13} className="regla-ok"/> : v.severidad === 'HARD' ? <XCircle size={13} className="regla-fail"/> : <AlertTriangle size={13} className="regla-warn"/>}
+                          <span>R{v.regla_num}: {v.cumple ? 'OK' : v.mensaje}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                    <button className="ev-btn-secondary" onClick={() => setShowIntModal(false)}>Cancelar</button>
+                    <button className="ev-btn-primary" onClick={crearIntercambio}
+                      disabled={!dryResult || !dryResult.cumple_reglas}>
+                      Enviar solicitud
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ TAB 4: ESTADÍSTICAS Y EQUIDAD ═══ */}
+      {tab === 'estadisticas' && (
+        <div>
+          {/* Tarjeta HOY */}
+          {hoyData && hoyData.farm_nombre && (
+            <div className="hoy-card" style={{marginBottom:20}}>
+              <div style={{fontSize:'.85rem',opacity:.7}}>Hoy {hoyData.fecha}</div>
+              <div className="hoy-nombre">{hoyData.farm_nombre}</div>
+              <div className="hoy-tipo">{hoyData.tipo_dia} — {hoyData.es_localizada ? 'Localizada' : 'Presencial'}</div>
+            </div>
+          )}
+
+          {/* Stats resumen */}
+          {statsGlobal && (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:8,marginBottom:20}}>
+              <div className="ev-stat"><div className="ev-stat-num">{statsGlobal.total_asignadas}</div><div className="ev-stat-label">Total guardias</div></div>
+              <div className="ev-stat"><div className="ev-stat-num">{statsGlobal.media_por_adjunto}</div><div className="ev-stat-label">Media/adjunto</div></div>
+              <div className="ev-stat"><div className="ev-stat-num">±{statsGlobal.desviacion_maxima}</div><div className="ev-stat-label">Desviación máx</div></div>
+              <div className="ev-stat"><div className="ev-stat-num">{conflictos?.total_conflictos || 0}</div><div className="ev-stat-label">Conflictos</div></div>
+            </div>
+          )}
+
+          {/* Tabla equidad */}
+          {equidad && (
+            <div style={{overflowX:'auto',marginBottom:20}}>
+              <h4 style={{margin:'0 0 8px',color:'#1a3a2a'}}>Tabla de Equidad</h4>
+              <table className="equidad-table">
+                <thead>
+                  <tr>
+                    <th>Farm.</th>
+                    {['LN','LJ','LV','LS','LD','LF','LFE'].map(t => <th key={t} className={TIPO_BADGE_CLASS[t]}>{t}</th>)}
+                    <th style={{fontWeight:700}}>Loc</th>
+                    {['PN','PJ','PV','PS','PF'].map(t => <th key={t} className={TIPO_BADGE_CLASS[t]}>{t}</th>)}
+                    <th style={{fontWeight:700}}>Pres</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {equidad.farmaceuticos?.map(f => (
+                    <tr key={f.id}>
+                      <td style={{fontWeight:600,textAlign:'left'}}>{f.codigo}</td>
+                      {['LN','LJ','LV','LS','LD','LF','LFE'].map(t => {
+                        const v = f[t] || 0
+                        const cls = f.rol !== 'ADJUNTO' ? '' : Math.abs(v - (equidad.cuota_media_loc/7||0)) <= 1 ? 'equidad-ok' : Math.abs(v - (equidad.cuota_media_loc/7||0)) <= 3 ? 'equidad-warn' : 'equidad-bad'
+                        return <td key={t} className={cls}>{v}</td>
+                      })}
+                      <td style={{fontWeight:700,background:'#f0ede6'}}>{f.total_loc}</td>
+                      {['PN','PJ','PV','PS','PF'].map(t => {
+                        const v = f[t] || 0
+                        return <td key={t}>{v}</td>
+                      })}
+                      <td style={{fontWeight:700,background:'#f0ede6'}}>{f.total_pres}</td>
+                      <td style={{fontWeight:700}}>{f.total}</td>
+                    </tr>
+                  ))}
+                  <tr style={{background:'#1a3a2a',color:'#fff'}}>
+                    <td>CUOTA</td>
+                    <td colSpan={7}></td>
+                    <td>{equidad.cuota_media_loc}</td>
+                    <td colSpan={5}></td>
+                    <td>{equidad.cuota_media_pres}</td>
+                    <td>{(equidad.cuota_media_loc + equidad.cuota_media_pres).toFixed(1)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Barras horizontales */}
+          {equidad && (
+            <div style={{marginBottom:20}}>
+              <h4 style={{margin:'0 0 8px',color:'#1a3a2a'}}>Distribución por farmacéutico</h4>
+              {equidad.farmaceuticos?.filter(f => f.rol !== 'CONTRATO_VERANO').map(f => (
+                <div key={f.id} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                  <span style={{minWidth:70,fontSize:'.75rem',fontWeight:600,textAlign:'right'}}>{f.codigo}</span>
+                  <div style={{flex:1,display:'flex',height:14,borderRadius:4,overflow:'hidden',background:'#f0ede6'}}>
+                    <div style={{width:`${f.total_loc*1.8}%`,background:'#22c55e'}} title={`Loc: ${f.total_loc}`}></div>
+                    <div style={{width:`${f.total_pres*1.8}%`,background:'#ef4444'}} title={`Pres: ${f.total_pres}`}></div>
+                  </div>
+                  <span style={{fontSize:'.7rem',color:'#888',minWidth:40}}>{f.total_loc}+{f.total_pres}</span>
+                </div>
+              ))}
+              <div style={{display:'flex',gap:16,fontSize:'.75rem',marginTop:6,color:'#888'}}>
+                <span><span style={{display:'inline-block',width:12,height:12,background:'#22c55e',borderRadius:2,verticalAlign:'middle',marginRight:4}}></span>Localizadas</span>
+                <span><span style={{display:'inline-block',width:12,height:12,background:'#ef4444',borderRadius:2,verticalAlign:'middle',marginRight:4}}></span>Presenciales</span>
+              </div>
+            </div>
+          )}
+
+          {/* Ruedas */}
+          {ruedas && (
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(250px,1fr))',gap:12,marginBottom:20}}>
+              {ruedas.map(r => (
+                <div key={r.id} className="ev-card">
+                  <h4 style={{margin:'0 0 8px'}}> Rueda {r.tipo_rueda}</h4>
+                  <div className="rueda-card">
+                    {r.secuencia?.map((s, i) => (
+                      <span key={i} className={`rueda-item${i === (r.orden_actual-1) ? ' current' : ''}`}>{s.codigo}</span>
+                    ))}
+                  </div>
+                  <div style={{fontSize:'.75rem',color:'#888',marginTop:6}}>
+                    Siguiente: <strong>{r.siguiente?.codigo}</strong>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Conflictos */}
+          {conflictos && conflictos.conflictos?.length > 0 && (
+            <div style={{marginBottom:20}}>
+              <h4 style={{margin:'0 0 8px',color:'#dc2626'}}>
+                <AlertTriangle size={16} style={{verticalAlign:'middle'}}/> Conflictos detectados ({conflictos.total_conflictos})
+              </h4>
+              <div className="evidencia-grid">
+                {conflictos.conflictos.map((c, i) => (
+                  <div key={i} className="ev-card" style={{borderLeft:`3px solid ${c.severidad === 'HARD' ? '#dc2626' : '#f59e0b'}`}}>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                      <span style={{fontWeight:700,fontSize:'.85rem'}}>Regla {c.regla}</span>
+                      <span className={`badge-guardia ${c.severidad === 'HARD' ? 'badge-pn' : 'badge-lfe'}`}>{c.severidad}</span>
+                    </div>
+                    <div style={{fontSize:'.8rem',color:'#555'}}>{c.descripcion}</div>
+                    <div style={{fontSize:'.75rem',color:'#888',marginTop:4}}>{c.farmaceutico} · {c.fecha}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* IA sugerencias */}
+          <div style={{marginBottom:20}}>
+            <button className="ev-btn-primary" onClick={pedirIA} disabled={iaLoading} style={{display:'flex',alignItems:'center',gap:6}}>
+              {iaLoading ? <RefreshCw size={14} className="spin"/> : <Sparkles size={14}/>}
+              {iaLoading ? 'Analizando con IA...' : 'Sugerir intercambios con IA'}
+            </button>
+            {iaSugerencias?.sugerencias && (
+              <div className="evidencia-grid" style={{marginTop:12}}>
+                {iaSugerencias.sugerencias.map((s, i) => (
+                  <div key={i} className="ev-card" style={{borderLeft:'3px solid #f59e0b'}}>
+                    <div style={{fontWeight:700,fontSize:'.85rem',marginBottom:6}}>
+                      <Sparkles size={13} style={{color:'#f59e0b',verticalAlign:'middle'}}/> Sugerencia {i+1}
+                    </div>
+                    <div style={{fontSize:'.8rem',marginBottom:4}}>
+                      {s.guardia_a?.farmaceutico} ({s.guardia_a?.fecha} {s.guardia_a?.tipo})
+                      <span className="intercambio-arrow" style={{margin:'0 6px'}}>⇄</span>
+                      {s.guardia_b?.farmaceutico} ({s.guardia_b?.fecha} {s.guardia_b?.tipo})
+                    </div>
+                    <div style={{fontSize:'.75rem',color:'#555'}}>{s.motivo}</div>
+                    <div style={{fontSize:'.75rem',color:'#22c55e',marginTop:4}}>{s.mejora_equidad}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 /* ═══ App ═══ */
 function App() {
   return (
@@ -3283,6 +3857,7 @@ function App() {
           <Route path="/ml" element={<AlgoritmosML />} />
           <Route path="/propuestas" element={<PropuestasEstrategicas />} />
           <Route path="/evidencia" element={<EvidenciaPage />} />
+          <Route path="/guardias" element={<GuardiasPage />} />
         </Routes>
       </main>
     </BrowserRouter>

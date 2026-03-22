@@ -3,6 +3,7 @@ SIGFAR API — FastAPI Backend
 Plataforma de Gestión Farmacéutica Asistida por IA
 """
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -2706,6 +2707,842 @@ async def evidencia_stats():
             "dominio_mejor": {"dominio": mejor, "pct": dominios_pct.get(mejor, 0)} if mejor else None,
             "dominio_peor": {"dominio": peor, "pct": dominios_pct.get(peor, 0)} if peor else None,
             "dominios_pct": dominios_pct
+        }
+
+
+# ═══════════════════════════════════════════════════════════════
+# MÓDULO G: GUARDIAS — Calendario de guardias del Servicio
+# 17 endpoints: farmacéuticos, calendario, intercambios,
+#               equidad, ruedas, iCal, IA sugerencias, conflictos
+# ═══════════════════════════════════════════════════════════════
+
+
+# ─── GET /api/guardias/farmaceuticos ─────────────────────────
+@app.get("/api/guardias/farmaceuticos", tags=["Guardias"])
+async def guardias_farmaceuticos():
+    async with async_session() as session:
+        rows = await session.execute(text("""
+            SELECT f.*,
+                   COUNT(c.id) FILTER (WHERE c.es_localizada) AS total_loc,
+                   COUNT(c.id) FILTER (WHERE c.es_presencial) AS total_pres,
+                   COUNT(c.id) AS total_guardias
+            FROM hgu_guardias_farmaceuticos f
+            LEFT JOIN hgu_guardias_calendario c ON c.farmaceutico_id = f.id
+            WHERE f.activo = TRUE
+            GROUP BY f.id
+            ORDER BY f.id
+        """))
+        return [dict(r._mapping) for r in rows]
+
+
+# ─── GET /api/guardias/farmaceuticos/{id} ────────────────────
+@app.get("/api/guardias/farmaceuticos/{farm_id}", tags=["Guardias"])
+async def guardias_farmaceutico_detalle(farm_id: int):
+    async with async_session() as session:
+        farm = await session.execute(text(
+            "SELECT * FROM hgu_guardias_farmaceuticos WHERE id = :id"
+        ), {"id": farm_id})
+        f = farm.first()
+        if not f:
+            raise HTTPException(404, "Farmacéutico no encontrado")
+        result = dict(f._mapping)
+
+        guardias = await session.execute(text("""
+            SELECT id, fecha, dia_semana, tipo_dia, es_localizada, es_presencial, estado, notas, mes
+            FROM hgu_guardias_calendario
+            WHERE farmaceutico_id = :id
+            ORDER BY fecha
+        """), {"id": farm_id})
+        result["guardias"] = [dict(r._mapping) for r in guardias]
+
+        stats = await session.execute(text("""
+            SELECT tipo_dia, COUNT(*) AS n
+            FROM hgu_guardias_calendario
+            WHERE farmaceutico_id = :id
+            GROUP BY tipo_dia ORDER BY tipo_dia
+        """), {"id": farm_id})
+        result["stats_por_tipo"] = {r.tipo_dia: r.n for r in stats}
+
+        prox = await session.execute(text("""
+            SELECT fecha, tipo_dia FROM hgu_guardias_calendario
+            WHERE farmaceutico_id = :id AND fecha >= CURRENT_DATE
+            ORDER BY fecha LIMIT 1
+        """), {"id": farm_id})
+        p = prox.first()
+        result["proxima_guardia"] = {"fecha": str(p.fecha), "tipo": p.tipo_dia} if p else None
+
+        return result
+
+
+# ─── GET /api/guardias/calendario ────────────────────────────
+@app.get("/api/guardias/calendario", tags=["Guardias"])
+async def guardias_calendario(
+    mes: int = None, farmaceutico_id: int = None,
+    tipo: str = None, es_localizada: bool = None, es_presencial: bool = None
+):
+    async with async_session() as session:
+        where = ["1=1"]
+        params = {}
+        if mes:
+            where.append("c.mes = :mes")
+            params["mes"] = mes
+        if farmaceutico_id:
+            where.append("c.farmaceutico_id = :fid")
+            params["fid"] = farmaceutico_id
+        if tipo:
+            where.append("c.tipo_dia = :tipo")
+            params["tipo"] = tipo
+        if es_localizada is not None:
+            where.append("c.es_localizada = :loc")
+            params["loc"] = es_localizada
+        if es_presencial is not None:
+            where.append("c.es_presencial = :pres")
+            params["pres"] = es_presencial
+
+        rows = await session.execute(text(f"""
+            SELECT c.*, f.nombre AS farm_nombre, f.codigo AS farm_codigo, f.color_hex
+            FROM hgu_guardias_calendario c
+            LEFT JOIN hgu_guardias_farmaceuticos f ON f.id = c.farmaceutico_id
+            WHERE {' AND '.join(where)}
+            ORDER BY c.fecha
+        """), params)
+        return [dict(r._mapping) for r in rows]
+
+
+# ─── GET /api/guardias/calendario/mes/{anio}/{mes} ──────────
+@app.get("/api/guardias/calendario/mes/{anio}/{mes}", tags=["Guardias"])
+async def guardias_calendario_mes(anio: int, mes: int):
+    """Vista mensual optimizada para grid 7×5: 35-42 celdas."""
+    from datetime import date as dt_date
+    import calendar
+
+    first_day = dt_date(anio, mes, 1)
+    # weekday(): 0=Mon..6=Sun
+    start_weekday = first_day.weekday()  # 0=Lun
+    days_in_month = calendar.monthrange(anio, mes)[1]
+
+    # Calcular rango: incluir días del mes anterior/siguiente para completar grid
+    start_date = first_day - timedelta(days=start_weekday)
+    total_cells = 42  # 6 filas × 7 columnas
+    end_date = start_date + timedelta(days=total_cells - 1)
+
+    async with async_session() as session:
+        rows = await session.execute(text("""
+            SELECT c.fecha, c.dia_semana, c.tipo_dia, c.es_localizada, c.es_presencial,
+                   c.estado, f.nombre AS farm_nombre, f.codigo AS farm_codigo, f.color_hex
+            FROM hgu_guardias_calendario c
+            LEFT JOIN hgu_guardias_farmaceuticos f ON f.id = c.farmaceutico_id
+            WHERE c.fecha BETWEEN :start AND :end
+            ORDER BY c.fecha
+        """), {"start": start_date, "end": end_date})
+
+        cal_map = {}
+        for r in rows:
+            cal_map[str(r.fecha)] = dict(r._mapping)
+
+    today = dt_date.today()
+    celdas = []
+    for i in range(total_cells):
+        d = start_date + timedelta(days=i)
+        ds = str(d)
+        info = cal_map.get(ds, {})
+        celdas.append({
+            "fecha": ds,
+            "dia_del_mes": d.day,
+            "dia_semana": info.get("dia_semana", ["L","M","X","J","V","S","D"][d.weekday()]),
+            "es_mes_actual": d.month == mes,
+            "es_hoy": d == today,
+            "es_weekend": d.weekday() >= 5,
+            "tipo_dia": info.get("tipo_dia"),
+            "es_localizada": info.get("es_localizada"),
+            "es_presencial": info.get("es_presencial"),
+            "estado": info.get("estado"),
+            "farm_nombre": info.get("farm_nombre"),
+            "farm_codigo": info.get("farm_codigo"),
+            "color_hex": info.get("color_hex"),
+        })
+
+    return {"anio": anio, "mes": mes, "celdas": celdas}
+
+
+# ─── GET /api/guardias/calendario/hoy ────────────────────────
+@app.get("/api/guardias/calendario/hoy", tags=["Guardias"])
+async def guardias_hoy():
+    async with async_session() as session:
+        row = await session.execute(text("""
+            SELECT c.*, f.nombre AS farm_nombre, f.codigo AS farm_codigo, f.color_hex
+            FROM hgu_guardias_calendario c
+            LEFT JOIN hgu_guardias_farmaceuticos f ON f.id = c.farmaceutico_id
+            WHERE c.fecha = CURRENT_DATE
+        """))
+        r = row.first()
+        if not r:
+            return {"mensaje": "No hay guardia asignada para hoy"}
+        return dict(r._mapping)
+
+
+# ─── GET /api/guardias/stats ─────────────────────────────────
+@app.get("/api/guardias/stats", tags=["Guardias"])
+async def guardias_stats():
+    async with async_session() as session:
+        total = await session.execute(text(
+            "SELECT COUNT(*) FROM hgu_guardias_calendario WHERE farmaceutico_id IS NOT NULL"
+        ))
+        por_tipo = await session.execute(text("""
+            SELECT tipo_dia, COUNT(*) AS n FROM hgu_guardias_calendario
+            GROUP BY tipo_dia ORDER BY tipo_dia
+        """))
+        adjuntos = await session.execute(text("""
+            SELECT f.codigo,
+                   COUNT(c.id) FILTER (WHERE c.es_localizada) AS loc,
+                   COUNT(c.id) FILTER (WHERE c.es_presencial) AS pres,
+                   COUNT(c.id) AS total
+            FROM hgu_guardias_farmaceuticos f
+            JOIN hgu_guardias_calendario c ON c.farmaceutico_id = f.id
+            WHERE f.rol = 'ADJUNTO'
+            GROUP BY f.id, f.codigo
+        """))
+        adj_list = [dict(r._mapping) for r in adjuntos]
+        totals = [a["total"] for a in adj_list]
+        media = round(sum(totals) / len(totals), 1) if totals else 0
+        desv_max = max(abs(t - media) for t in totals) if totals else 0
+
+        ruedas = await session.execute(text("SELECT * FROM hgu_guardias_ruedas ORDER BY id"))
+        ruedas_info = []
+        for r in ruedas:
+            seq = r.secuencia if isinstance(r.secuencia, list) else json.loads(r.secuencia) if isinstance(r.secuencia, str) else r.secuencia
+            siguiente = seq[(r.orden_actual - 1) % len(seq)] if seq else None
+            ruedas_info.append({
+                "tipo": r.tipo_rueda, "orden_actual": r.orden_actual,
+                "siguiente": siguiente
+            })
+
+        return {
+            "total_asignadas": total.scalar(),
+            "por_tipo": {r.tipo_dia: r.n for r in por_tipo},
+            "media_por_adjunto": media,
+            "desviacion_maxima": round(desv_max, 1),
+            "ruedas": ruedas_info
+        }
+
+
+# ─── GET /api/guardias/stats/{farmaceutico_id} ──────────────
+@app.get("/api/guardias/stats/{farm_id}", tags=["Guardias"])
+async def guardias_stats_personal(farm_id: int):
+    async with async_session() as session:
+        farm = await session.execute(text(
+            "SELECT nombre, codigo FROM hgu_guardias_farmaceuticos WHERE id = :id"
+        ), {"id": farm_id})
+        f = farm.first()
+        if not f:
+            raise HTTPException(404, "Farmacéutico no encontrado")
+
+        por_tipo = await session.execute(text("""
+            SELECT tipo_dia, COUNT(*) AS n FROM hgu_guardias_calendario
+            WHERE farmaceutico_id = :id GROUP BY tipo_dia ORDER BY tipo_dia
+        """), {"id": farm_id})
+        tipos = {r.tipo_dia: r.n for r in por_tipo}
+
+        total_loc = sum(v for k, v in tipos.items() if k.startswith("L"))
+        total_pres = sum(v for k, v in tipos.items() if k.startswith("P"))
+
+        prox = await session.execute(text("""
+            SELECT fecha, tipo_dia FROM hgu_guardias_calendario
+            WHERE farmaceutico_id = :id AND fecha >= CURRENT_DATE
+            ORDER BY fecha LIMIT 1
+        """), {"id": farm_id})
+        p = prox.first()
+
+        # Cuota media adjuntos
+        media = await session.execute(text("""
+            SELECT AVG(cnt) FROM (
+                SELECT COUNT(*) AS cnt FROM hgu_guardias_calendario c
+                JOIN hgu_guardias_farmaceuticos f ON f.id = c.farmaceutico_id
+                WHERE f.rol = 'ADJUNTO'
+                GROUP BY f.id
+            ) sub
+        """))
+        cuota = round(media.scalar() or 0, 1)
+
+        return {
+            "farmaceutico": f.nombre, "codigo": f.codigo,
+            "por_tipo": tipos,
+            "total_localizadas": total_loc, "total_presenciales": total_pres,
+            "total": total_loc + total_pres,
+            "cuota_media_adjunto": cuota,
+            "diferencia_cuota": round((total_loc + total_pres) - cuota, 1),
+            "proxima_guardia": {"fecha": str(p.fecha), "tipo": p.tipo_dia} if p else None
+        }
+
+
+# ─── GET /api/guardias/equidad ───────────────────────────────
+@app.get("/api/guardias/equidad", tags=["Guardias"])
+async def guardias_equidad():
+    async with async_session() as session:
+        rows = await session.execute(text("""
+            SELECT f.id, f.nombre, f.codigo, f.rol,
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'LN') AS "LN",
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'LJ') AS "LJ",
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'LV') AS "LV",
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'LS') AS "LS",
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'LD') AS "LD",
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'LF') AS "LF",
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'LFE') AS "LFE",
+                   COUNT(c.id) FILTER (WHERE c.es_localizada) AS total_loc,
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'PN') AS "PN",
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'PJ') AS "PJ",
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'PV') AS "PV",
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'PS') AS "PS",
+                   COUNT(c.id) FILTER (WHERE c.tipo_dia = 'PF') AS "PF",
+                   COUNT(c.id) FILTER (WHERE c.es_presencial) AS total_pres,
+                   COUNT(c.id) AS total
+            FROM hgu_guardias_farmaceuticos f
+            LEFT JOIN hgu_guardias_calendario c ON c.farmaceutico_id = f.id
+            WHERE f.activo = TRUE
+            GROUP BY f.id ORDER BY f.id
+        """))
+        data = [dict(r._mapping) for r in rows]
+
+        # Calcular cuota media solo de adjuntos
+        adj = [d for d in data if d["rol"] == "ADJUNTO"]
+        if adj:
+            media_loc = round(sum(d["total_loc"] for d in adj) / len(adj), 1)
+            media_pres = round(sum(d["total_pres"] for d in adj) / len(adj), 1)
+        else:
+            media_loc = media_pres = 0
+
+        for d in data:
+            if d["rol"] == "ADJUNTO":
+                d["desviacion_loc"] = round(d["total_loc"] - media_loc, 1)
+                d["desviacion_pres"] = round(d["total_pres"] - media_pres, 1)
+            else:
+                d["desviacion_loc"] = None
+                d["desviacion_pres"] = None
+
+        return {
+            "farmaceuticos": data,
+            "cuota_media_loc": media_loc,
+            "cuota_media_pres": media_pres
+        }
+
+
+# ─── POST /api/guardias/intercambios ────────────────────────
+@app.post("/api/guardias/intercambios", tags=["Guardias"])
+async def guardias_crear_intercambio(body: dict):
+    sol_id = body.get("solicitante_id")
+    rec_id = body.get("receptor_id")
+    ofr_id = body.get("guardia_ofrecida_id")
+    ped_id = body.get("guardia_pedida_id")
+    motivo = body.get("motivo", "")
+    dry_run = body.get("dry_run", False)
+
+    if not all([sol_id, rec_id, ofr_id, ped_id]):
+        raise HTTPException(400, "solicitante_id, receptor_id, guardia_ofrecida_id, guardia_pedida_id son obligatorios")
+
+    async with async_session() as session:
+        # Obtener guardias
+        g_ofr = await session.execute(text(
+            "SELECT * FROM hgu_guardias_calendario WHERE id = :id"), {"id": ofr_id})
+        g_ped = await session.execute(text(
+            "SELECT * FROM hgu_guardias_calendario WHERE id = :id"), {"id": ped_id})
+        ofrecida = g_ofr.first()
+        pedida = g_ped.first()
+        if not ofrecida or not pedida:
+            raise HTTPException(404, "Guardia no encontrada")
+
+        # Obtener farmacéuticos
+        f_sol = await session.execute(text(
+            "SELECT * FROM hgu_guardias_farmaceuticos WHERE id = :id"), {"id": sol_id})
+        f_rec = await session.execute(text(
+            "SELECT * FROM hgu_guardias_farmaceuticos WHERE id = :id"), {"id": rec_id})
+        solicitante = f_sol.first()
+        receptor = f_rec.first()
+        if not solicitante or not receptor:
+            raise HTTPException(404, "Farmacéutico no encontrado")
+
+        # Validar las 10 reglas
+        reglas_rows = await session.execute(text(
+            "SELECT * FROM hgu_guardias_reglas WHERE activa = TRUE ORDER BY numero"))
+        reglas = [dict(r._mapping) for r in reglas_rows]
+
+        validacion = []
+        cumple_hard = True
+        for regla in reglas:
+            num = regla["numero"]
+            sev = regla["severidad"]
+            cumple = True
+            mensaje = "OK"
+
+            if num == 3:
+                # PBS doble GL, 0 presenciales
+                if receptor.codigo == "PBS" and pedida.es_presencial:
+                    cumple = False
+                    mensaje = "PBS no puede asumir guardias presenciales"
+                if solicitante.codigo == "PBS" and ofrecida.es_presencial:
+                    cumple = False
+                    mensaje = "PBS no puede asumir guardias presenciales"
+
+            elif num == 6:
+                # 1-3 guardias/mes por adjunto
+                for fid, fname in [(rec_id, receptor.nombre), (sol_id, solicitante.nombre)]:
+                    cnt = await session.execute(text("""
+                        SELECT COUNT(*) FROM hgu_guardias_calendario
+                        WHERE farmaceutico_id = :fid AND mes = :mes
+                    """), {"fid": fid, "mes": ofrecida.mes})
+                    c = cnt.scalar()
+                    if c > 3:
+                        cumple = False
+                        mensaje = f"{fname} ya tiene {c} guardias en ese mes (máx 3)"
+
+            elif num == 9:
+                # Navidad excluyente
+                sol_fechas = await session.execute(text("""
+                    SELECT fecha FROM hgu_guardias_calendario
+                    WHERE farmaceutico_id = :id AND fecha IN ('2026-12-24','2026-12-25','2026-12-31','2027-01-01')
+                """), {"id": sol_id})
+                sf = [str(r.fecha) for r in sol_fechas]
+                nav = any("12-24" in f or "12-25" in f for f in sf)
+                nye = any("12-31" in f or "01-01" in f for f in sf)
+                if nav and nye:
+                    cumple = False
+                    mensaje = "No puede tener Navidad Y Año Nuevo"
+
+            elif num == 7:
+                # Evitar GPF+GL consecutivas
+                for fid in [sol_id, rec_id]:
+                    consec = await session.execute(text("""
+                        SELECT fecha, es_localizada, es_presencial
+                        FROM hgu_guardias_calendario
+                        WHERE farmaceutico_id = :fid
+                        ORDER BY fecha
+                    """), {"fid": fid})
+                    prev = None
+                    for r in consec:
+                        if prev and (r.fecha - prev.fecha).days == 1:
+                            if prev.es_presencial and r.es_localizada:
+                                cumple = False
+                                mensaje = "Guardia presencial seguida de localizada detectada"
+                        prev = r
+
+            if not cumple and sev == "HARD":
+                cumple_hard = False
+
+            validacion.append({
+                "regla_num": num,
+                "descripcion": regla["descripcion"],
+                "severidad": sev,
+                "cumple": cumple,
+                "mensaje": mensaje
+            })
+
+        cumple_todas = all(v["cumple"] for v in validacion)
+
+        if dry_run:
+            return {
+                "dry_run": True,
+                "cumple_reglas": cumple_hard,
+                "cumple_todas": cumple_todas,
+                "validacion_reglas": validacion
+            }
+
+        # Crear intercambio
+        result = await session.execute(text("""
+            INSERT INTO hgu_guardias_intercambios
+                (solicitante_id, receptor_id, guardia_ofrecida_id, guardia_pedida_id,
+                 motivo, validacion_reglas, cumple_reglas)
+            VALUES (:sol, :rec, :ofr, :ped, :mot, :val, :cumple)
+            RETURNING id
+        """), {
+            "sol": sol_id, "rec": rec_id, "ofr": ofr_id, "ped": ped_id,
+            "mot": motivo,
+            "val": json.dumps(validacion),
+            "cumple": cumple_hard
+        })
+        await session.commit()
+        new_id = result.scalar()
+
+        return {
+            "id": new_id,
+            "cumple_reglas": cumple_hard,
+            "cumple_todas": cumple_todas,
+            "validacion_reglas": validacion
+        }
+
+
+# ─── GET /api/guardias/intercambios ──────────────────────────
+@app.get("/api/guardias/intercambios", tags=["Guardias"])
+async def guardias_listar_intercambios(estado: str = None, farmaceutico_id: int = None):
+    async with async_session() as session:
+        where = ["1=1"]
+        params = {}
+        if estado:
+            where.append("i.estado = :estado")
+            params["estado"] = estado
+        if farmaceutico_id:
+            where.append("(i.solicitante_id = :fid OR i.receptor_id = :fid)")
+            params["fid"] = farmaceutico_id
+
+        rows = await session.execute(text(f"""
+            SELECT i.*,
+                   fs.nombre AS solicitante_nombre, fs.codigo AS solicitante_codigo,
+                   fr.nombre AS receptor_nombre, fr.codigo AS receptor_codigo,
+                   go.fecha AS fecha_ofrecida, go.tipo_dia AS tipo_ofrecida,
+                   gp.fecha AS fecha_pedida, gp.tipo_dia AS tipo_pedida
+            FROM hgu_guardias_intercambios i
+            LEFT JOIN hgu_guardias_farmaceuticos fs ON fs.id = i.solicitante_id
+            LEFT JOIN hgu_guardias_farmaceuticos fr ON fr.id = i.receptor_id
+            LEFT JOIN hgu_guardias_calendario go ON go.id = i.guardia_ofrecida_id
+            LEFT JOIN hgu_guardias_calendario gp ON gp.id = i.guardia_pedida_id
+            WHERE {' AND '.join(where)}
+            ORDER BY i.fecha_solicitud DESC
+        """), params)
+        return [dict(r._mapping) for r in rows]
+
+
+# ─── POST /api/guardias/intercambios/{id}/aceptar ───────────
+@app.post("/api/guardias/intercambios/{int_id}/aceptar", tags=["Guardias"])
+async def guardias_aceptar_intercambio(int_id: int):
+    async with async_session() as session:
+        row = await session.execute(text(
+            "SELECT * FROM hgu_guardias_intercambios WHERE id = :id"), {"id": int_id})
+        inter = row.first()
+        if not inter:
+            raise HTTPException(404, "Intercambio no encontrado")
+        if inter.estado != "PENDIENTE":
+            raise HTTPException(400, f"Intercambio en estado {inter.estado}, no se puede aceptar")
+
+        if inter.cumple_reglas:
+            # Ejecutar swap
+            await session.execute(text("""
+                UPDATE hgu_guardias_calendario SET farmaceutico_id = :rec
+                WHERE id = :ofr
+            """), {"rec": inter.receptor_id, "ofr": inter.guardia_ofrecida_id})
+            await session.execute(text("""
+                UPDATE hgu_guardias_calendario SET farmaceutico_id = :sol
+                WHERE id = :ped
+            """), {"sol": inter.solicitante_id, "ped": inter.guardia_pedida_id})
+            await session.execute(text("""
+                UPDATE hgu_guardias_calendario SET estado = 'INTERCAMBIADA'
+                WHERE id IN (:ofr, :ped)
+            """), {"ofr": inter.guardia_ofrecida_id, "ped": inter.guardia_pedida_id})
+            await session.execute(text("""
+                UPDATE hgu_guardias_intercambios
+                SET estado = 'ACEPTADA', fecha_respuesta = NOW()
+                WHERE id = :id
+            """), {"id": int_id})
+        else:
+            # Reglas HARD violadas: se marca como ACEPTADA pero necesita validación jefa
+            await session.execute(text("""
+                UPDATE hgu_guardias_intercambios
+                SET estado = 'ACEPTADA', fecha_respuesta = NOW()
+                WHERE id = :id
+            """), {"id": int_id})
+
+        await session.commit()
+        return {"ok": True, "estado": "ACEPTADA", "swap_ejecutado": inter.cumple_reglas}
+
+
+# ─── POST /api/guardias/intercambios/{id}/rechazar ──────────
+@app.post("/api/guardias/intercambios/{int_id}/rechazar", tags=["Guardias"])
+async def guardias_rechazar_intercambio(int_id: int):
+    async with async_session() as session:
+        await session.execute(text("""
+            UPDATE hgu_guardias_intercambios
+            SET estado = 'RECHAZADA', fecha_respuesta = NOW()
+            WHERE id = :id AND estado = 'PENDIENTE'
+        """), {"id": int_id})
+        await session.commit()
+        return {"ok": True, "estado": "RECHAZADA"}
+
+
+# ─── POST /api/guardias/intercambios/{id}/validar ───────────
+@app.post("/api/guardias/intercambios/{int_id}/validar", tags=["Guardias"])
+async def guardias_validar_intercambio(int_id: int):
+    """La jefa valida un intercambio con reglas SOFT violadas."""
+    async with async_session() as session:
+        row = await session.execute(text(
+            "SELECT * FROM hgu_guardias_intercambios WHERE id = :id"), {"id": int_id})
+        inter = row.first()
+        if not inter:
+            raise HTTPException(404, "Intercambio no encontrado")
+        if inter.estado != "ACEPTADA":
+            raise HTTPException(400, "Solo se pueden validar intercambios ACEPTADOS")
+
+        # Ejecutar swap si aún no se hizo
+        await session.execute(text("""
+            UPDATE hgu_guardias_calendario SET farmaceutico_id = :rec
+            WHERE id = :ofr
+        """), {"rec": inter.receptor_id, "ofr": inter.guardia_ofrecida_id})
+        await session.execute(text("""
+            UPDATE hgu_guardias_calendario SET farmaceutico_id = :sol
+            WHERE id = :ped
+        """), {"sol": inter.solicitante_id, "ped": inter.guardia_pedida_id})
+        await session.execute(text("""
+            UPDATE hgu_guardias_calendario SET estado = 'INTERCAMBIADA'
+            WHERE id IN (:ofr, :ped)
+        """), {"ofr": inter.guardia_ofrecida_id, "ped": inter.guardia_pedida_id})
+        await session.execute(text("""
+            UPDATE hgu_guardias_intercambios
+            SET estado = 'VALIDADA_JEFA'
+            WHERE id = :id
+        """), {"id": int_id})
+        await session.commit()
+        return {"ok": True, "estado": "VALIDADA_JEFA"}
+
+
+# ─── GET /api/guardias/ruedas ────────────────────────────────
+@app.get("/api/guardias/ruedas", tags=["Guardias"])
+async def guardias_ruedas():
+    async with async_session() as session:
+        rows = await session.execute(text("SELECT * FROM hgu_guardias_ruedas ORDER BY id"))
+        result = []
+        for r in rows:
+            seq = r.secuencia if isinstance(r.secuencia, list) else json.loads(r.secuencia) if isinstance(r.secuencia, str) else r.secuencia
+            idx = (r.orden_actual - 1) % len(seq) if seq else 0
+            result.append({
+                "id": r.id,
+                "tipo_rueda": r.tipo_rueda,
+                "orden_actual": r.orden_actual,
+                "secuencia": seq,
+                "siguiente": seq[idx] if seq else None
+            })
+        return result
+
+
+# ─── GET /api/guardias/exportar-ical/{farmaceutico_id} ──────
+@app.get("/api/guardias/exportar-ical/{farm_id}", tags=["Guardias"])
+async def guardias_exportar_ical(farm_id: int):
+    tipo_emoji = {
+        "LN": "🌙", "LJ": "🌙", "LV": "🌙", "LS": "🌙", "LD": "🌙", "LF": "🌙", "LFE": "⭐",
+        "PN": "🏥", "PJ": "🏥", "PV": "🏥", "PS": "🏥", "PF": "🏥", "PFE": "⭐🏥"
+    }
+    async with async_session() as session:
+        farm = await session.execute(text(
+            "SELECT nombre, codigo FROM hgu_guardias_farmaceuticos WHERE id = :id"), {"id": farm_id})
+        f = farm.first()
+        if not f:
+            raise HTTPException(404, "Farmacéutico no encontrado")
+
+        rows = await session.execute(text("""
+            SELECT fecha, tipo_dia, es_localizada FROM hgu_guardias_calendario
+            WHERE farmaceutico_id = :id ORDER BY fecha
+        """), {"id": farm_id})
+
+        lines = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "PRODID:-//SIGFAR Hub//Guardias//ES",
+            f"X-WR-CALNAME:Guardias {f.nombre}",
+        ]
+        for r in rows:
+            emoji = tipo_emoji.get(r.tipo_dia, "")
+            cat = "Localizada" if r.es_localizada else "Presencial"
+            fecha_str = r.fecha.strftime("%Y%m%d")
+            lines.extend([
+                "BEGIN:VEVENT",
+                f"DTSTART;VALUE=DATE:{fecha_str}",
+                f"DTEND;VALUE=DATE:{fecha_str}",
+                f"SUMMARY:{emoji} {r.tipo_dia} — Guardia {cat}",
+                f"DESCRIPTION:Guardia {cat} tipo {r.tipo_dia} — {f.nombre}",
+                f"UID:sigfar-guardia-{r.fecha}-{f.codigo}@sigfar-hub",
+                "END:VEVENT",
+            ])
+        lines.append("END:VCALENDAR")
+
+        ical_content = "\r\n".join(lines)
+        return Response(
+            content=ical_content,
+            media_type="text/calendar",
+            headers={"Content-Disposition": f'attachment; filename="guardias_{f.codigo}.ics"'}
+        )
+
+
+# ─── POST /api/guardias/ia/sugerir-intercambio ──────────────
+@app.post("/api/guardias/ia/sugerir-intercambio", tags=["Guardias"])
+async def guardias_ia_sugerir():
+    if not OPENAI_API_KEY or OPENAI_API_KEY == "sk-placeholder":
+        raise HTTPException(400, "OPENAI_API_KEY no configurada")
+
+    async with async_session() as session:
+        # Obtener equidad actual
+        eq_rows = await session.execute(text("""
+            SELECT f.codigo, f.rol,
+                   COUNT(c.id) FILTER (WHERE c.es_localizada) AS loc,
+                   COUNT(c.id) FILTER (WHERE c.es_presencial) AS pres,
+                   COUNT(c.id) AS total
+            FROM hgu_guardias_farmaceuticos f
+            JOIN hgu_guardias_calendario c ON c.farmaceutico_id = f.id
+            WHERE f.activo = TRUE AND f.rol IN ('ADJUNTO','JEFA')
+            GROUP BY f.id, f.codigo, f.rol ORDER BY f.id
+        """))
+        equidad = [dict(r._mapping) for r in eq_rows]
+
+        # Obtener reglas
+        reglas_rows = await session.execute(text(
+            "SELECT numero, descripcion, severidad FROM hgu_guardias_reglas WHERE activa = TRUE ORDER BY numero"))
+        reglas = [dict(r._mapping) for r in reglas_rows]
+
+        # Próximas guardias (30 días)
+        prox = await session.execute(text("""
+            SELECT c.fecha, c.tipo_dia, f.codigo AS farm_codigo
+            FROM hgu_guardias_calendario c
+            JOIN hgu_guardias_farmaceuticos f ON f.id = c.farmaceutico_id
+            WHERE c.fecha BETWEEN CURRENT_DATE AND CURRENT_DATE + 30
+            ORDER BY c.fecha
+        """))
+        proximas = [dict(r._mapping) for r in prox]
+
+    prompt_sistema = f"""Eres un planificador de guardias farmacéuticas hospitalarias.
+{SIGFAR_CONTEXT_PROMPT}
+
+Te doy la tabla de equidad actual, las 10 reglas del decálogo y las guardias de los próximos 30 días.
+Sugiere hasta 5 intercambios concretos para MEJORAR la equidad sin violar reglas HARD.
+
+Para cada sugerencia devuelve JSON:
+[
+  {{
+    "guardia_a": {{"fecha": "YYYY-MM-DD", "tipo": "XX", "farmaceutico": "CODIGO"}},
+    "guardia_b": {{"fecha": "YYYY-MM-DD", "tipo": "XX", "farmaceutico": "CODIGO"}},
+    "motivo": "explicación breve",
+    "mejora_equidad": "qué mejora concretamente"
+  }}
+]
+Responde SOLO con el JSON array, sin markdown."""
+
+    prompt_user = f"""EQUIDAD ACTUAL:
+{json.dumps(equidad, ensure_ascii=False)}
+
+REGLAS DEL DECÁLOGO:
+{json.dumps(reglas, ensure_ascii=False)}
+
+PRÓXIMAS 30 DÍAS:
+{json.dumps(proximas, default=str, ensure_ascii=False)}"""
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": "llama-3.3-70b-versatile",
+                "temperature": 0.4,
+                "max_tokens": 2000,
+                "messages": [
+                    {"role": "system", "content": prompt_sistema},
+                    {"role": "user", "content": prompt_user}
+                ]
+            }
+        )
+    if resp.status_code != 200:
+        raise HTTPException(502, f"Error Groq: {resp.status_code} — {resp.text[:300]}")
+
+    raw = resp.json()["choices"][0]["message"]["content"].strip()
+    if raw.startswith("```"):
+        raw = _re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = _re.sub(r"\s*```$", "", raw)
+
+    try:
+        sugerencias = json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(502, f"Groq devolvió JSON inválido: {raw[:500]}")
+
+    return {"sugerencias": sugerencias}
+
+
+# ─── GET /api/guardias/conflictos ────────────────────────────
+@app.get("/api/guardias/conflictos", tags=["Guardias"])
+async def guardias_conflictos():
+    """Escanea la planilla y detecta violaciones actuales de las 10 reglas."""
+    async with async_session() as session:
+        conflictos = []
+
+        # Regla 3: PBS sin presenciales
+        pbs_pres = await session.execute(text("""
+            SELECT c.fecha, c.tipo_dia FROM hgu_guardias_calendario c
+            JOIN hgu_guardias_farmaceuticos f ON f.id = c.farmaceutico_id
+            WHERE f.codigo = 'PBS' AND c.es_presencial = TRUE
+        """))
+        for r in pbs_pres:
+            conflictos.append({
+                "regla": 3, "severidad": "HARD",
+                "descripcion": "PBS tiene guardia presencial asignada",
+                "farmaceutico": "PBS", "fecha": str(r.fecha), "detalle": r.tipo_dia
+            })
+
+        # Regla 6: Adjuntos con >3 guardias en un mes
+        sobrecarga = await session.execute(text("""
+            SELECT f.codigo, c.mes, COUNT(*) AS cnt
+            FROM hgu_guardias_calendario c
+            JOIN hgu_guardias_farmaceuticos f ON f.id = c.farmaceutico_id
+            WHERE f.rol = 'ADJUNTO'
+            GROUP BY f.codigo, c.mes
+            HAVING COUNT(*) > 3
+        """))
+        for r in sobrecarga:
+            conflictos.append({
+                "regla": 6, "severidad": "HARD",
+                "descripcion": f"{r.codigo} tiene {r.cnt} guardias en mes {r.mes} (máx 3)",
+                "farmaceutico": r.codigo, "fecha": f"Mes {r.mes}", "detalle": f"{r.cnt} guardias"
+            })
+
+        # Regla 6b: Adjuntos con 0 guardias en un mes
+        infracarga = await session.execute(text("""
+            SELECT f.codigo, m.mes
+            FROM hgu_guardias_farmaceuticos f
+            CROSS JOIN generate_series(1,12) AS m(mes)
+            LEFT JOIN hgu_guardias_calendario c ON c.farmaceutico_id = f.id AND c.mes = m.mes
+            WHERE f.rol = 'ADJUNTO' AND f.activo = TRUE
+            GROUP BY f.codigo, m.mes
+            HAVING COUNT(c.id) = 0
+        """))
+        for r in infracarga:
+            conflictos.append({
+                "regla": 6, "severidad": "HARD",
+                "descripcion": f"{r.codigo} tiene 0 guardias en mes {r.mes} (mín 1)",
+                "farmaceutico": r.codigo, "fecha": f"Mes {r.mes}", "detalle": "0 guardias"
+            })
+
+        # Regla 7: GPF+GL consecutivas
+        consec = await session.execute(text("""
+            SELECT f.codigo, c1.fecha AS f1, c1.tipo_dia AS t1, c2.fecha AS f2, c2.tipo_dia AS t2
+            FROM hgu_guardias_calendario c1
+            JOIN hgu_guardias_calendario c2 ON c2.farmaceutico_id = c1.farmaceutico_id
+                 AND c2.fecha = c1.fecha + 1
+            JOIN hgu_guardias_farmaceuticos f ON f.id = c1.farmaceutico_id
+            WHERE c1.es_presencial = TRUE AND c2.es_localizada = TRUE
+        """))
+        for r in consec:
+            conflictos.append({
+                "regla": 7, "severidad": "SOFT",
+                "descripcion": f"{r.codigo}: presencial {r.t1} ({r.f1}) + localizada {r.t2} ({r.f2}) consecutivas",
+                "farmaceutico": r.codigo, "fecha": str(r.f1),
+                "detalle": f"{r.t1} → {r.t2}"
+            })
+
+        # Regla 9: Navidad + Año Nuevo mismo farmacéutico
+        navidad_anio = await session.execute(text("""
+            SELECT f.codigo
+            FROM hgu_guardias_farmaceuticos f
+            WHERE EXISTS (
+                SELECT 1 FROM hgu_guardias_calendario c
+                WHERE c.farmaceutico_id = f.id AND c.fecha IN ('2026-12-24','2026-12-25')
+            ) AND EXISTS (
+                SELECT 1 FROM hgu_guardias_calendario c
+                WHERE c.farmaceutico_id = f.id AND c.fecha IN ('2026-12-31')
+            )
+        """))
+        for r in navidad_anio:
+            conflictos.append({
+                "regla": 9, "severidad": "HARD",
+                "descripcion": f"{r.codigo} tiene Navidad Y Año Nuevo",
+                "farmaceutico": r.codigo, "fecha": "Dic 2026",
+                "detalle": "Navidad excluyente"
+            })
+
+        return {
+            "total_conflictos": len(conflictos),
+            "hard": len([c for c in conflictos if c["severidad"] == "HARD"]),
+            "soft": len([c for c in conflictos if c["severidad"] == "SOFT"]),
+            "conflictos": conflictos
         }
 
 
