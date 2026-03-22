@@ -2289,17 +2289,197 @@ async def evidencia_benchmark_detail(bench_id: int):
         return bench
 
 
+# ─── POST /api/evidencia/buscar-articulo ─────────────────────
+@app.post("/api/evidencia/buscar-articulo", tags=["Evidencia"])
+async def evidencia_buscar_articulo(body: dict):
+    query = body.get("query", "").strip()
+    if not query:
+        raise HTTPException(400, "Introduce DOI, PMID o título")
+
+    resultados = []
+    is_doi = "10." in query and "/" in query
+    is_pmid = query.isdigit() and 6 <= len(query) <= 9
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        if is_doi:
+            # CrossRef por DOI
+            try:
+                cr = await client.get(f"https://api.crossref.org/works/{query}",
+                    headers={"User-Agent": "SIGFAR-Hub/1.0 (mailto:sigfar@chguv.es)"})
+                if cr.status_code == 200:
+                    w = cr.json().get("message", {})
+                    titulo_cr = " ".join(w.get("title", ["Sin título"]))
+                    autores_cr = ", ".join([f"{a.get('family', '')} {a.get('given', '')}" for a in w.get("author", [])])
+                    revista_cr = " ".join(w.get("container-title", [""]))
+                    anio_cr = None
+                    dp = w.get("published-print", w.get("published-online", {}))
+                    if dp and "date-parts" in dp and dp["date-parts"]:
+                        anio_cr = dp["date-parts"][0][0] if dp["date-parts"][0] else None
+                    abstract_cr = w.get("abstract", "")
+                    if abstract_cr:
+                        abstract_cr = _re.sub(r"<[^>]+>", "", abstract_cr)
+                    resultados.append({
+                        "titulo": titulo_cr, "autores": autores_cr, "revista": revista_cr,
+                        "anio": anio_cr, "doi": query, "abstract": abstract_cr,
+                        "url_pdf_oa": None, "fuente": "CrossRef"
+                    })
+            except Exception:
+                pass
+            # Unpaywall
+            try:
+                up = await client.get(f"https://api.unpaywall.org/v2/{query}?email=sigfar@chguv.es")
+                if up.status_code == 200:
+                    ud = up.json()
+                    oa_url = None
+                    best = ud.get("best_oa_location")
+                    if best:
+                        oa_url = best.get("url_for_pdf") or best.get("url")
+                    if resultados:
+                        resultados[0]["url_pdf_oa"] = oa_url
+                    if not resultados:
+                        resultados.append({
+                            "titulo": ud.get("title", ""), "autores": "", "revista": ud.get("journal_name", ""),
+                            "anio": ud.get("year"), "doi": query, "abstract": "",
+                            "url_pdf_oa": oa_url, "fuente": "Unpaywall"
+                        })
+            except Exception:
+                pass
+
+        elif is_pmid:
+            # PubMed efetch por PMID
+            try:
+                pm = await client.get(f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={query}&retmode=xml")
+                if pm.status_code == 200:
+                    xml = pm.text
+                    titulo_pm = _re.search(r"<ArticleTitle>(.+?)</ArticleTitle>", xml, _re.DOTALL)
+                    abstract_pm = _re.search(r"<AbstractText[^>]*>(.+?)</AbstractText>", xml, _re.DOTALL)
+                    journal_pm = _re.search(r"<Title>(.+?)</Title>", xml)
+                    year_pm = _re.search(r"<PubDate>\s*<Year>(\d{4})</Year>", xml)
+                    doi_pm = _re.search(r'<ArticleId IdType="doi">(.+?)</ArticleId>', xml)
+                    authors_pm = _re.findall(r"<LastName>(.+?)</LastName>\s*<ForeName>(.+?)</ForeName>", xml)
+                    resultados.append({
+                        "titulo": _re.sub(r"<[^>]+>", "", titulo_pm.group(1)) if titulo_pm else "",
+                        "autores": ", ".join([f"{a[0]} {a[1]}" for a in authors_pm[:6]]) + ("..." if len(authors_pm) > 6 else ""),
+                        "revista": journal_pm.group(1) if journal_pm else "",
+                        "anio": int(year_pm.group(1)) if year_pm else None,
+                        "doi": doi_pm.group(1) if doi_pm else None,
+                        "pmid": query,
+                        "abstract": _re.sub(r"<[^>]+>", "", abstract_pm.group(1)) if abstract_pm else "",
+                        "url_pdf_oa": None, "fuente": "PubMed"
+                    })
+            except Exception:
+                pass
+
+        else:
+            # Búsqueda por texto libre — CrossRef + PubMed
+            try:
+                safe_q = query.replace(" ", "+")
+                cr = await client.get(f"https://api.crossref.org/works?query={safe_q}&rows=6",
+                    headers={"User-Agent": "SIGFAR-Hub/1.0 (mailto:sigfar@chguv.es)"})
+                if cr.status_code == 200:
+                    for w in cr.json().get("message", {}).get("items", []):
+                        titulo_w = " ".join(w.get("title", ["?"]))
+                        autores_w = ", ".join([f"{a.get('family', '')} {a.get('given', '')}" for a in w.get("author", [])[:4]])
+                        revista_w = " ".join(w.get("container-title", [""]))
+                        dp = w.get("published-print", w.get("published-online", {}))
+                        anio_w = dp["date-parts"][0][0] if dp and dp.get("date-parts") and dp["date-parts"][0] else None
+                        abstract_w = _re.sub(r"<[^>]+>", "", w.get("abstract", "")) if w.get("abstract") else ""
+                        resultados.append({
+                            "titulo": titulo_w, "autores": autores_w, "revista": revista_w,
+                            "anio": anio_w, "doi": w.get("DOI"), "abstract": abstract_w,
+                            "url_pdf_oa": None, "fuente": "CrossRef"
+                        })
+            except Exception:
+                pass
+            try:
+                pm = await client.get(f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={query}&retmax=4&retmode=json")
+                if pm.status_code == 200:
+                    ids = pm.json().get("esearchresult", {}).get("idlist", [])
+                    for pid in ids:
+                        ef = await client.get(f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={pid}&retmode=xml")
+                        if ef.status_code == 200:
+                            xml = ef.text
+                            t = _re.search(r"<ArticleTitle>(.+?)</ArticleTitle>", xml, _re.DOTALL)
+                            ab = _re.search(r"<AbstractText[^>]*>(.+?)</AbstractText>", xml, _re.DOTALL)
+                            j = _re.search(r"<Title>(.+?)</Title>", xml)
+                            y = _re.search(r"<PubDate>\s*<Year>(\d{4})</Year>", xml)
+                            d = _re.search(r'<ArticleId IdType="doi">(.+?)</ArticleId>', xml)
+                            aus = _re.findall(r"<LastName>(.+?)</LastName>\s*<ForeName>(.+?)</ForeName>", xml)
+                            # Deduplicar por DOI
+                            doi_val = d.group(1) if d else None
+                            if doi_val and any(r.get("doi") == doi_val for r in resultados):
+                                continue
+                            resultados.append({
+                                "titulo": _re.sub(r"<[^>]+>", "", t.group(1)) if t else "",
+                                "autores": ", ".join([f"{a[0]} {a[1]}" for a in aus[:4]]) + ("..." if len(aus) > 4 else ""),
+                                "revista": j.group(1) if j else "",
+                                "anio": int(y.group(1)) if y else None,
+                                "doi": doi_val, "pmid": pid,
+                                "abstract": _re.sub(r"<[^>]+>", "", ab.group(1)) if ab else "",
+                                "url_pdf_oa": None, "fuente": "PubMed"
+                            })
+            except Exception:
+                pass
+
+    return {"query": query, "tipo": "DOI" if is_doi else "PMID" if is_pmid else "TEXTO", "resultados": resultados[:10]}
+
+
 # ─── POST /api/evidencia/benchmarks/analizar ───────────────────
 @app.post("/api/evidencia/benchmarks/analizar", tags=["Evidencia"])
 async def evidencia_analizar_articulo(body: dict):
     titulo = body.get("titulo_articulo", "").strip()
     contenido = body.get("contenido_texto", "").strip()
+    doi = body.get("doi", "")
+    url_articulo = body.get("url_articulo", "").strip()
     autores = body.get("autores", "")
     revista = body.get("revista", "")
     anio = body.get("anio")
 
-    if not titulo or not contenido:
-        raise HTTPException(400, "titulo_articulo y contenido_texto son obligatorios")
+    # Si hay URL, intentar fetch del contenido
+    if url_articulo and not contenido:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(url_articulo, follow_redirects=True,
+                    headers={"User-Agent": "Mozilla/5.0 SIGFAR-Hub/1.0"})
+                if resp.status_code == 200:
+                    html = resp.text
+                    # Extraer texto limpio del HTML
+                    text_clean = _re.sub(r"<script[^>]*>.*?</script>", "", html, flags=_re.DOTALL)
+                    text_clean = _re.sub(r"<style[^>]*>.*?</style>", "", text_clean, flags=_re.DOTALL)
+                    text_clean = _re.sub(r"<[^>]+>", " ", text_clean)
+                    text_clean = _re.sub(r"\s+", " ", text_clean).strip()
+                    if len(text_clean) > 200:
+                        contenido = text_clean
+        except Exception:
+            pass
+
+    # Si hay DOI pero no contenido, buscar abstract
+    if doi and not contenido:
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                cr = await client.get(f"https://api.crossref.org/works/{doi}",
+                    headers={"User-Agent": "SIGFAR-Hub/1.0 (mailto:sigfar@chguv.es)"})
+                if cr.status_code == 200:
+                    w = cr.json().get("message", {})
+                    ab = w.get("abstract", "")
+                    if ab:
+                        contenido = _re.sub(r"<[^>]+>", "", ab)
+                    if not titulo:
+                        titulo = " ".join(w.get("title", [""]))
+                    if not autores:
+                        autores = ", ".join([f"{a.get('family', '')} {a.get('given', '')}" for a in w.get("author", [])[:6]])
+                    if not revista:
+                        revista = " ".join(w.get("container-title", [""]))
+                    dp = w.get("published-print", w.get("published-online", {}))
+                    if not anio and dp and dp.get("date-parts") and dp["date-parts"][0]:
+                        anio = dp["date-parts"][0][0]
+        except Exception:
+            pass
+
+    if not titulo:
+        raise HTTPException(400, "titulo_articulo es obligatorio")
+    if not contenido:
+        raise HTTPException(400, "No se pudo obtener contenido del artículo. Pega el texto manualmente.")
 
     # Truncar a ~12000 chars para no exceder contexto Groq
     contenido_truncado = contenido[:12000]

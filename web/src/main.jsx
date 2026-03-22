@@ -2795,8 +2795,14 @@ function EvidenciaPage() {
   const [loading, setLoading] = React.useState(false)
   const [showAnalizar, setShowAnalizar] = React.useState(false)
   const [showGenerarPaper, setShowGenerarPaper] = React.useState(false)
-  const [formArticulo, setFormArticulo] = React.useState({ titulo_articulo: '', autores: '', revista: '', anio: '', contenido_texto: '' })
+  const [formArticulo, setFormArticulo] = React.useState({ titulo_articulo: '', autores: '', revista: '', anio: '', contenido_texto: '', doi: '', url_articulo: '' })
   const [paperBenchIds, setPaperBenchIds] = React.useState([])
+  const [modalTab, setModalTab] = React.useState('buscar')
+  const [searchQuery, setSearchQuery] = React.useState('')
+  const [searchResults, setSearchResults] = React.useState([])
+  const [searchLoading, setSearchLoading] = React.useState(false)
+  const [dragOver, setDragOver] = React.useState(false)
+  const [pdfName, setPdfName] = React.useState('')
 
   const reload = () => {
     fetch(API + '/api/evidencia/benchmarks').then(r => r.json()).then(setBenchmarks).catch(() => {})
@@ -2866,6 +2872,88 @@ function EvidenciaPage() {
     setLoading(false)
   }
   const copyMd = (md) => { navigator.clipboard.writeText(md); alert('Markdown copiado al portapapeles') }
+
+  // Buscar artículo por DOI/PMID/título
+  const buscarArticulo = async () => {
+    if (!searchQuery.trim()) return
+    setSearchLoading(true); setSearchResults([])
+    try {
+      const r = await fetch(API + '/api/evidencia/buscar-articulo', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: searchQuery.trim() })
+      })
+      const d = await r.json()
+      setSearchResults(d.resultados || [])
+    } catch { setSearchResults([]) }
+    setSearchLoading(false)
+  }
+
+  // Seleccionar un resultado de búsqueda y analizar
+  const analizarDesdeResultado = async (res) => {
+    setLoading(true); setShowAnalizar(false)
+    try {
+      const payload = {
+        titulo_articulo: res.titulo, autores: res.autores, revista: res.revista,
+        anio: res.anio, doi: res.doi || '',
+        contenido_texto: res.abstract || ''
+      }
+      const r = await fetch(API + '/api/evidencia/benchmarks/analizar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      })
+      const d = await r.json()
+      if (r.ok) { setSelectedBench(d); reload() }
+      else alert(d.detail || 'Error al analizar')
+    } catch (e) { alert('Error: ' + e.message) }
+    setLoading(false)
+  }
+
+  // Analizar desde URL
+  const analizarDesdeURL = async () => {
+    if (!formArticulo.url_articulo.trim()) return
+    setLoading(true); setShowAnalizar(false)
+    try {
+      const r = await fetch(API + '/api/evidencia/benchmarks/analizar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titulo_articulo: formArticulo.url_articulo.split('/').pop() || 'Artículo desde URL', url_articulo: formArticulo.url_articulo })
+      })
+      const d = await r.json()
+      if (r.ok) { setSelectedBench(d); reload(); setFormArticulo(prev => ({ ...prev, url_articulo: '' })) }
+      else alert(d.detail || 'Error al analizar')
+    } catch (e) { alert('Error: ' + e.message) }
+    setLoading(false)
+  }
+
+  // Handle PDF drop/select
+  const handlePdfFile = (file) => {
+    if (!file || !file.name.endsWith('.pdf')) { alert('Solo se aceptan archivos PDF'); return }
+    setPdfName(file.name)
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const text = atob(reader.result.split(',')[1] || '')
+      // Extract readable text from PDF binary (basic extraction)
+      const lines = []
+      const matches = text.match(/\(([^)]{2,})\)/g)
+      if (matches) matches.forEach(m => { const t = m.slice(1, -1); if (t.length > 3 && /[a-zA-ZáéíóúñÁÉÍÓÚÑ]/.test(t)) lines.push(t) })
+      // Also try BT...ET text blocks
+      const btBlocks = text.match(/BT[\s\S]*?ET/g)
+      if (btBlocks) btBlocks.forEach(b => {
+        const tjs = b.match(/\(([^)]+)\)/g)
+        if (tjs) tjs.forEach(m => { const t = m.slice(1, -1); if (t.length > 2) lines.push(t) })
+      })
+      const extracted = lines.join(' ').replace(/\s+/g, ' ').trim()
+      if (extracted.length > 100) {
+        setFormArticulo(prev => ({ ...prev, contenido_texto: extracted, titulo_articulo: prev.titulo_articulo || file.name.replace('.pdf', '') }))
+        setModalTab('texto')
+      } else {
+        alert('No se pudo extraer texto del PDF. Es probable que sea un PDF escaneado (imagen). Copia el texto manualmente en la pestaña "Pegar texto".')
+        setModalTab('texto')
+      }
+    }
+    reader.readAsDataURL(file)
+  }
+  const onDrop = (e) => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handlePdfFile(f) }
+  const onDragOver = (e) => { e.preventDefault(); setDragOver(true) }
+  const onDragLeave = () => setDragOver(false)
 
   // Simple markdown to HTML
   const renderMd = (md) => {
@@ -2986,34 +3074,138 @@ function EvidenciaPage() {
             </button>
           </div>
 
-          {/* Modal analizar */}
+          {/* Modal analizar — 4 tabs */}
           {showAnalizar && (
             <div className="ev-modal-overlay" onClick={() => setShowAnalizar(false)}>
-              <div className="ev-modal" onClick={e => e.stopPropagation()}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div className="ev-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 720 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <h3 style={{ margin: 0 }}><Brain size={18} style={{ marginRight: 8 }} />Analizar artículo con IA</h3>
                   <button onClick={() => setShowAnalizar(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
                 </div>
-                <div style={{ display: 'grid', gap: 10 }}>
-                  <input placeholder="Título del artículo *" value={formArticulo.titulo_articulo}
-                    onChange={e => setFormArticulo({ ...formArticulo, titulo_articulo: e.target.value })}
-                    className="ev-input" />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: 8 }}>
-                    <input placeholder="Autores" value={formArticulo.autores}
-                      onChange={e => setFormArticulo({ ...formArticulo, autores: e.target.value })} className="ev-input" />
-                    <input placeholder="Revista" value={formArticulo.revista}
-                      onChange={e => setFormArticulo({ ...formArticulo, revista: e.target.value })} className="ev-input" />
-                    <input placeholder="Año" type="number" value={formArticulo.anio}
-                      onChange={e => setFormArticulo({ ...formArticulo, anio: e.target.value })} className="ev-input" />
-                  </div>
-                  <textarea placeholder="Pega aquí el texto completo del artículo *" value={formArticulo.contenido_texto}
-                    onChange={e => setFormArticulo({ ...formArticulo, contenido_texto: e.target.value })}
-                    className="ev-input modal-evidencia-textarea" />
-                  <button className="ev-btn-primary" onClick={analizarArticulo}
-                    disabled={!formArticulo.titulo_articulo.trim() || !formArticulo.contenido_texto.trim()}>
-                    <Sparkles size={16} /> Analizar con IA
-                  </button>
+
+                {/* Modal tabs */}
+                <div className="modal-tabs">
+                  {[
+                    { k: 'buscar', icon: Search, label: 'Buscar DOI / título' },
+                    { k: 'pdf', icon: FileText, label: 'Subir PDF' },
+                    { k: 'texto', icon: ScrollText, label: 'Pegar texto' },
+                    { k: 'url', icon: ExternalLink, label: 'Desde URL' }
+                  ].map(t => (
+                    <button key={t.k} className={`modal-tab ${modalTab === t.k ? 'active' : ''}`}
+                      onClick={() => setModalTab(t.k)}>
+                      <t.icon size={13} style={{ marginRight: 4 }} />{t.label}
+                    </button>
+                  ))}
                 </div>
+
+                {/* Tab A: Buscar por DOI/PMID/título */}
+                {modalTab === 'buscar' && (
+                  <div>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                      <input className="ev-input" style={{ flex: 1 }} placeholder="DOI, PMID o título del artículo..."
+                        value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && buscarArticulo()} />
+                      <button className="ev-btn-primary" onClick={buscarArticulo} disabled={searchLoading || !searchQuery.trim()}>
+                        {searchLoading ? <RefreshCw size={14} className="spin" /> : <Search size={14} />} Buscar
+                      </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 12 }}>
+                      {['10.7399/fh.14113', 'artificial intelligence hospital pharmacy', '37123456'].map(ex => (
+                        <button key={ex} className="ejemplo-chip" onClick={() => { setSearchQuery(ex); }}>{ex}</button>
+                      ))}
+                    </div>
+                    {searchLoading && <p style={{ textAlign: 'center', color: '#888' }}><RefreshCw size={16} className="spin" /> Buscando en CrossRef + PubMed...</p>}
+                    {searchResults.length > 0 && (
+                      <div style={{ display: 'grid', gap: 8, maxHeight: 400, overflowY: 'auto' }}>
+                        {searchResults.map((res, i) => (
+                          <div key={i} className="search-result-card" onClick={() => analizarDesdeResultado(res)}>
+                            <div className="sr-title">{res.titulo}</div>
+                            <div className="sr-authors">{res.autores}</div>
+                            <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4 }}>
+                              <span className="sr-journal">{res.revista} {res.anio ? `(${res.anio})` : ''}</span>
+                              {res.doi && <span className="badge-fuente badge-fuente-doi">DOI</span>}
+                              {res.url_pdf_oa && <span className="badge-oa">PDF Open Access</span>}
+                              <span className="badge-fuente" style={{ background: '#f0ede6', color: '#555' }}>{res.fuente}</span>
+                            </div>
+                            {res.abstract && <div className="sr-abstract">{res.abstract.slice(0, 200)}...</div>}
+                            <div style={{ marginTop: 6, textAlign: 'right' }}>
+                              <span style={{ fontSize: '.75rem', color: '#0d9488', fontWeight: 600 }}>
+                                <Sparkles size={12} /> Click para analizar con IA
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {!searchLoading && searchResults.length === 0 && searchQuery && (
+                      <p style={{ textAlign: 'center', color: '#999', fontSize: '.85rem' }}>Escribe y pulsa Buscar para encontrar artículos.</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Tab B: Subir PDF (drag & drop) */}
+                {modalTab === 'pdf' && (
+                  <div>
+                    <div className={`drop-zone ${dragOver ? 'dragover' : ''}`}
+                      onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave}
+                      onClick={() => document.getElementById('pdf-input').click()}>
+                      <div className="drop-icon"><FileText size={48} color={dragOver ? '#0d9488' : '#9ca3af'} /></div>
+                      <div className="drop-text">
+                        {pdfName ? <><strong>{pdfName}</strong> cargado</> : <>Arrastra aquí el PDF del artículo<br/>o haz clic para seleccionar</>}
+                      </div>
+                      <input id="pdf-input" type="file" accept=".pdf" style={{ display: 'none' }}
+                        onChange={e => { if (e.target.files[0]) handlePdfFile(e.target.files[0]) }} />
+                    </div>
+                    <p style={{ fontSize: '.78rem', color: '#888', marginTop: 8, textAlign: 'center' }}>
+                      El texto se extrae localmente. Si el PDF es escaneado, pega el texto en la pestaña "Pegar texto".
+                    </p>
+                  </div>
+                )}
+
+                {/* Tab C: Pegar texto */}
+                {modalTab === 'texto' && (
+                  <div style={{ display: 'grid', gap: 10 }}>
+                    <input placeholder="Título del artículo *" value={formArticulo.titulo_articulo}
+                      onChange={e => setFormArticulo({ ...formArticulo, titulo_articulo: e.target.value })}
+                      className="ev-input" />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 100px', gap: 8 }}>
+                      <input placeholder="Autores" value={formArticulo.autores}
+                        onChange={e => setFormArticulo({ ...formArticulo, autores: e.target.value })} className="ev-input" />
+                      <input placeholder="Revista" value={formArticulo.revista}
+                        onChange={e => setFormArticulo({ ...formArticulo, revista: e.target.value })} className="ev-input" />
+                      <input placeholder="DOI (opcional)" value={formArticulo.doi}
+                        onChange={e => setFormArticulo({ ...formArticulo, doi: e.target.value })} className="ev-input" />
+                      <input placeholder="Año" type="number" value={formArticulo.anio}
+                        onChange={e => setFormArticulo({ ...formArticulo, anio: e.target.value })} className="ev-input" />
+                    </div>
+                    <textarea placeholder="Pega aquí el texto completo o abstract del artículo *" value={formArticulo.contenido_texto}
+                      onChange={e => setFormArticulo({ ...formArticulo, contenido_texto: e.target.value })}
+                      className="ev-input modal-evidencia-textarea" />
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '.78rem', color: '#888' }}>{formArticulo.contenido_texto.length} caracteres</span>
+                      <button className="ev-btn-primary" onClick={analizarArticulo}
+                        disabled={!formArticulo.titulo_articulo.trim() || !formArticulo.contenido_texto.trim()}>
+                        <Sparkles size={16} /> Analizar con IA
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tab D: Desde URL */}
+                {modalTab === 'url' && (
+                  <div>
+                    <input className="ev-input" placeholder="https://pubmed.ncbi.nlm.nih.gov/12345678/ o URL del artículo..."
+                      value={formArticulo.url_articulo} onChange={e => setFormArticulo({ ...formArticulo, url_articulo: e.target.value })}
+                      onKeyDown={e => e.key === 'Enter' && analizarDesdeURL()} style={{ marginBottom: 12 }} />
+                    <p style={{ fontSize: '.78rem', color: '#888', marginBottom: 12 }}>
+                      Funciona mejor con artículos Open Access. El Hub descargará la página y extraerá el texto.
+                    </p>
+                    <button className="ev-btn-primary" onClick={analizarDesdeURL}
+                      disabled={!formArticulo.url_articulo.trim()}>
+                      <Sparkles size={16} /> Analizar desde URL
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
