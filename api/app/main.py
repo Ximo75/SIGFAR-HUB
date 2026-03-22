@@ -516,3 +516,1149 @@ Responde siempre en español, de forma clara y concisa. Si tienes datos numéric
         respuesta = data["choices"][0]["message"]["content"]
 
     return {"pregunta": texto, "respuesta": respuesta, "modelo": "llama-3.3-70b-groq"}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# RADAR IA — Monitorización de novedades IA en farmacia hospitalaria
+# ═══════════════════════════════════════════════════════════════════
+
+import asyncio
+import json
+import hashlib
+import re as _re
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
+from urllib.parse import quote_plus
+from datetime import datetime, timedelta
+from pydantic import BaseModel
+
+
+# --- Modelos Pydantic Radar ---
+
+class RadarScanRequest(BaseModel):
+    fuentes: list[str] | None = None
+
+class RadarToggleFav(BaseModel):
+    item_id: int
+
+class RadarSetNota(BaseModel):
+    item_id: int
+    nota: str
+
+class RadarSetPrioridad(BaseModel):
+    item_id: int
+    prioridad: str
+
+
+# --- Modelos Pydantic APIs ---
+
+class ApiToggleFav(BaseModel):
+    api_id: int
+
+class ApiSetNota(BaseModel):
+    api_id: int
+    nota: str
+
+class ApiSetPrioridad(BaseModel):
+    api_id: int
+    prioridad: str
+
+
+# --- Prompt para clasificación IA ---
+
+RADAR_SYSTEM_PROMPT = """Eres un analista de inteligencia competitiva especializado en farmacia hospitalaria e inteligencia artificial. Analiza el siguiente artículo/noticia y devuelve SOLO un JSON válido (sin markdown, sin backticks, sin texto adicional) con esta estructura exacta:
+{"resumen_es": "Resumen de 2-3 frases en español", "categoria": "VALIDACION|FARMACOCINETICA|NUTRICION|PROA|ELABORACION|STOCK_LOGISTICA|ROBOTICA|FARMACOECONOMIA|CUADRO_MANDOS|REGULACION", "subcategoria": "texto libre", "relevancia": 0, "pais": "código ISO 2 letras o null", "institucion": "nombre o null", "estado_sigfar_hub": "IMPLEMENTADO|PARCIAL|PLANIFICADO|NUEVO", "modulo_sigfar": "P15|P36|P37|P40|P42|P43|HUB|null", "como_implementar": "Cómo implementar o mejorar esto en SIGFAR Hub (1-2 frases)", "tags": ["tag1","tag2","tag3"]}
+
+Criterios de relevancia (0-100): 90-100 directamente aplicable a farmacia hospitalaria+IA; 70-89 muy relevante con adaptación menor; 50-69 idea transferible; 30-49 tangencial; 0-29 poco relevante.
+
+Contexto SIGFAR Hub: plataforma multiagente IA para farmacia hospitalaria. Módulos operativos: nutrición artificial (P36, 7 agentes), farmacocinética/TDM MAP Bayesiano (P42), PROA antimicrobianos (P43, 6 agentes), detección EM/PRM (P15), NPD domiciliaria (P37), scoring complejidad (P40). Pendientes: cuadro mandos directivo, farmacoeconomía, multi-IA consenso, vigilancia proactiva 24/7, simulador FIR. Integración prevista con: robots de elaboración (ExactaMix, ChemoMaker), prescripción NP (Versia), dispensadores (PYXIS), HCE (Hosix/Florence), laboratorio, microbiología."""
+
+RADAR_VALID_CATS = {'VALIDACION', 'FARMACOCINETICA', 'NUTRICION', 'PROA', 'ELABORACION',
+                    'STOCK_LOGISTICA', 'ROBOTICA', 'FARMACOECONOMIA', 'CUADRO_MANDOS', 'REGULACION'}
+
+
+# --- Utilidades ---
+
+def _xml_text(el):
+    """Extrae todo el texto de un elemento XML incluyendo sub-elementos"""
+    return "".join(el.itertext()) if el is not None else ""
+
+def _safe_date(s):
+    """Convierte string YYYY-MM-DD a date o None"""
+    if not s:
+        return None
+    try:
+        return date.fromisoformat(s[:10])
+    except Exception:
+        return None
+
+
+# --- Escáneres por fuente ---
+
+async def _radar_scan_pubmed(client, query, categoria):
+    """Escanea PubMed: esearch (PMIDs) → efetch (títulos + abstracts)"""
+    items = []
+    try:
+        r = await client.get(
+            f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+            f"?db=pubmed&retmode=json&retmax=15&sort=date&term={quote_plus(query)}",
+            timeout=20)
+        if r.status_code != 200:
+            return items
+        pmids = r.json().get("esearchresult", {}).get("idlist", [])
+        if not pmids:
+            return items
+        await asyncio.sleep(0.5)
+        r2 = await client.get(
+            f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+            f"?db=pubmed&id={','.join(pmids)}&retmode=xml",
+            timeout=30)
+        if r2.status_code != 200:
+            return items
+        xml_str = _re.sub(r'<!DOCTYPE[^>]*>', '', r2.text)
+        root = ET.fromstring(xml_str)
+        for art in root.findall(".//PubmedArticle"):
+            try:
+                pmid = art.findtext(".//PMID", "")
+                titulo = _xml_text(art.find(".//ArticleTitle"))
+                abstracts = art.findall(".//AbstractText")
+                resumen = " ".join(_xml_text(a) for a in abstracts) if abstracts else ""
+                fecha_pub = None
+                pd_el = art.find(".//PubDate")
+                if pd_el is not None:
+                    y = pd_el.findtext("Year", "")
+                    m = pd_el.findtext("Month", "01")
+                    d = pd_el.findtext("Day", "01")
+                    mmap = {"Jan": "01", "Feb": "02", "Mar": "03", "Apr": "04",
+                            "May": "05", "Jun": "06", "Jul": "07", "Aug": "08",
+                            "Sep": "09", "Oct": "10", "Nov": "11", "Dec": "12"}
+                    mn = mmap.get(m, m.zfill(2) if m.isdigit() else "01")
+                    dn = d.zfill(2) if d.isdigit() else "01"
+                    if y:
+                        fecha_pub = f"{y}-{mn}-{dn}"
+                if titulo and pmid:
+                    items.append({
+                        "titulo": titulo[:500],
+                        "resumen": resumen[:4000] or None,
+                        "categoria": categoria,
+                        "fuente": "PUBMED",
+                        "fuente_id": pmid,
+                        "url_original": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                        "fecha_publicacion": fecha_pub,
+                        "json_raw": {"pmid": pmid, "query": query}
+                    })
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return items
+
+
+async def _radar_scan_google_news(client, query, categoria):
+    """Escanea Google News RSS"""
+    items = []
+    try:
+        r = await client.get(
+            f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=es&gl=ES&ceid=ES:es",
+            timeout=20)
+        if r.status_code != 200:
+            return items
+        root = ET.fromstring(r.text)
+        for el in root.findall(".//item")[:10]:
+            try:
+                titulo = el.findtext("title", "")
+                link = el.findtext("link", "")
+                desc = el.findtext("description", "")
+                guid = el.findtext("guid", "")
+                pub_str = el.findtext("pubDate", "")
+                src_el = el.find("source")
+                src_name = src_el.text if src_el is not None else ""
+                fid = guid[:100] if guid else hashlib.md5(link.encode()).hexdigest()[:20]
+                fecha_pub = None
+                if pub_str:
+                    try:
+                        fecha_pub = parsedate_to_datetime(pub_str).strftime("%Y-%m-%d")
+                    except Exception:
+                        pass
+                if desc:
+                    desc = _re.sub(r'<[^>]+>', '', desc)
+                if titulo and link:
+                    items.append({
+                        "titulo": titulo[:500],
+                        "resumen": desc[:4000] if desc else None,
+                        "categoria": categoria,
+                        "fuente": "GOOGLE_NEWS",
+                        "fuente_id": fid,
+                        "url_original": link[:1000],
+                        "fecha_publicacion": fecha_pub,
+                        "json_raw": {"source": src_name, "query": query}
+                    })
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return items
+
+
+async def _radar_scan_clinicaltrials(client, query, categoria):
+    """Escanea ClinicalTrials.gov API v2"""
+    items = []
+    try:
+        r = await client.get(
+            f"https://clinicaltrials.gov/api/v2/studies"
+            f"?query.term={quote_plus(query)}&pageSize=10&sort=LastUpdatePostDate:desc",
+            timeout=20)
+        if r.status_code != 200:
+            return items
+        for study in r.json().get("studies", []):
+            try:
+                proto = study.get("protocolSection", {})
+                ident = proto.get("identificationModule", {})
+                desc = proto.get("descriptionModule", {})
+                status_mod = proto.get("statusModule", {})
+                nct = ident.get("nctId", "")
+                titulo = ident.get("briefTitle", "")
+                resumen = desc.get("briefSummary", "")
+                last_upd = status_mod.get("lastUpdateSubmitDate", "")
+                if titulo and nct:
+                    items.append({
+                        "titulo": titulo[:500],
+                        "resumen": resumen[:4000] if resumen else None,
+                        "categoria": categoria,
+                        "fuente": "CLINICALTRIALS",
+                        "fuente_id": nct,
+                        "url_original": f"https://clinicaltrials.gov/study/{nct}",
+                        "fecha_publicacion": last_upd[:10] if last_upd else None,
+                        "json_raw": {"nctId": nct, "query": query}
+                    })
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return items
+
+
+async def _radar_scan_semantic(client, query, categoria):
+    """Escanea Semantic Scholar Graph API"""
+    items = []
+    try:
+        r = await client.get(
+            f"https://api.semanticscholar.org/graph/v1/paper/search"
+            f"?query={quote_plus(query)}&limit=10&fields=title,abstract,url,year,venue,externalIds",
+            timeout=20)
+        if r.status_code != 200:
+            return items
+        for paper in r.json().get("data", []):
+            try:
+                pid = paper.get("paperId", "")
+                titulo = paper.get("title", "")
+                abstract = paper.get("abstract", "")
+                purl = paper.get("url") or f"https://www.semanticscholar.org/paper/{pid}"
+                year = paper.get("year")
+                ext = paper.get("externalIds") or {}
+                if titulo and pid:
+                    items.append({
+                        "titulo": titulo[:500],
+                        "resumen": abstract[:4000] if abstract else None,
+                        "categoria": categoria,
+                        "fuente": "SEMANTIC",
+                        "fuente_id": pid[:100],
+                        "url_original": purl[:1000],
+                        "fecha_publicacion": f"{year}-01-01" if year else None,
+                        "json_raw": {"paperId": pid, "doi": ext.get("DOI", ""),
+                                     "venue": paper.get("venue", ""), "query": query}
+                    })
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return items
+
+
+_RADAR_SCANNERS = {
+    "PUBMED": _radar_scan_pubmed,
+    "GOOGLE_NEWS": _radar_scan_google_news,
+    "CLINICALTRIALS": _radar_scan_clinicaltrials,
+    "SEMANTIC": _radar_scan_semantic,
+}
+_RADAR_DELAYS = {"PUBMED": 0.5, "SEMANTIC": 1.0, "GOOGLE_NEWS": 0.3, "CLINICALTRIALS": 0.3}
+
+
+# --- Enriquecimiento con Groq/Llama ---
+
+async def _radar_enrich_one(client, item_id, titulo, resumen):
+    """Enriquece un ítem llamando a Groq/Llama. Retorna True si OK."""
+    try:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": "llama-3.3-70b-versatile",
+                "messages": [
+                    {"role": "system", "content": RADAR_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Título: {titulo}\nResumen: {resumen or 'No disponible'}"}
+                ],
+                "max_tokens": 800,
+                "temperature": 0.3
+            },
+            timeout=30)
+        if resp.status_code != 200:
+            return False
+        content = resp.json()["choices"][0]["message"]["content"].strip()
+        # Limpiar posibles backticks de Llama
+        if content.startswith("```"):
+            content = content.split("\n", 1)[-1]
+            if content.endswith("```"):
+                content = content[:-3]
+            content = content.strip()
+        ia = json.loads(content)
+
+        # Validar campos
+        cat = ia.get("categoria")
+        if cat not in RADAR_VALID_CATS:
+            cat = None
+        estado = ia.get("estado_sigfar_hub", "NUEVO")
+        if estado not in ('IMPLEMENTADO', 'PARCIAL', 'PLANIFICADO', 'NUEVO'):
+            estado = "NUEVO"
+        modulo = ia.get("modulo_sigfar")
+        if modulo not in ('P15', 'P36', 'P37', 'P40', 'P42', 'P43', 'HUB', None):
+            modulo = None
+        rel = ia.get("relevancia", 50)
+        rel = max(0, min(100, int(rel))) if isinstance(rel, (int, float)) else 50
+        tags_list = ia.get("tags", [])
+        tags_str = ", ".join(tags_list) if isinstance(tags_list, list) else None
+
+        # Construir UPDATE dinámico
+        sets = [
+            "resumen_ia = :resumen_ia", "como_en_sigfar_hub = :como",
+            "estado_sigfar_hub = :estado", "relevancia = :rel",
+            "subcategoria = :subcat", "pais = :pais", "institucion = :inst",
+            "tags = :tags", "json_ia = CAST(:json_ia AS jsonb)"
+        ]
+        params = {
+            "id": item_id,
+            "resumen_ia": (ia.get("resumen_es") or "")[:4000],
+            "como": (ia.get("como_implementar") or "")[:2000],
+            "estado": estado, "rel": rel,
+            "subcat": (ia.get("subcategoria") or "")[:100],
+            "pais": (ia.get("pais") or "")[:5] or None,
+            "inst": (ia.get("institucion") or "")[:200] or None,
+            "tags": (tags_str or "")[:500] or None,
+            "json_ia": json.dumps(ia, ensure_ascii=False)
+        }
+        if cat:
+            sets.append("categoria = :cat")
+            params["cat"] = cat
+        if modulo is not None:
+            sets.append("modulo_sigfar = :modulo")
+            params["modulo"] = modulo
+
+        async with async_session() as session:
+            await session.execute(
+                text(f"UPDATE hgu_radar_items SET {', '.join(sets)} WHERE id = :id"), params)
+            await session.commit()
+        return True
+    except Exception:
+        return False
+
+
+# ─── Endpoints Radar IA ─────────────────────────────────────────
+
+@app.get("/api/radar/items", tags=["Radar IA"])
+async def radar_items(
+        categoria: str | None = None, estado: str | None = None,
+        fuente: str | None = None, favorito: bool | None = None,
+        buscar: str | None = None, periodo: int | None = None,
+        skip: int = 0, limit: int = 50):
+    """Lista ítems del radar con filtros opcionales"""
+    conds = ["archivado = FALSE"]
+    params = {"lim": min(limit, 200), "off": skip}
+    if categoria:
+        conds.append("categoria = :cat")
+        params["cat"] = categoria
+    if estado:
+        conds.append("estado_sigfar_hub = :est")
+        params["est"] = estado
+    if fuente:
+        conds.append("fuente = :fuente")
+        params["fuente"] = fuente
+    if favorito:
+        conds.append("favorito = TRUE")
+    if buscar:
+        conds.append("(LOWER(titulo) LIKE :q OR LOWER(COALESCE(resumen_ia,'')) LIKE :q OR LOWER(COALESCE(resumen,'')) LIKE :q)")
+        params["q"] = f"%{buscar.lower()}%"
+    if periodo and periodo > 0:
+        conds.append("fecha_scan >= NOW() - :dias * INTERVAL '1 day'")
+        params["dias"] = periodo
+    where = " AND ".join(conds)
+    sql = f"""SELECT * FROM hgu_radar_items WHERE {where}
+              ORDER BY relevancia DESC, fecha_publicacion DESC NULLS LAST
+              LIMIT :lim OFFSET :off"""
+    async with async_session() as session:
+        result = await session.execute(text(sql), params)
+        return [dict(r) for r in result.mappings().all()]
+
+
+@app.get("/api/radar/items/{item_id}", tags=["Radar IA"])
+async def radar_item_detail(item_id: int):
+    """Detalle de un ítem — lo marca como leído automáticamente"""
+    async with async_session() as session:
+        result = await session.execute(
+            text("SELECT * FROM hgu_radar_items WHERE id = :id"), {"id": item_id})
+        row = result.mappings().first()
+        if not row:
+            raise HTTPException(404, "Ítem no encontrado")
+        if not row["leido"]:
+            await session.execute(
+                text("UPDATE hgu_radar_items SET leido = TRUE, fecha_leido = NOW() WHERE id = :id"),
+                {"id": item_id})
+            await session.commit()
+        return dict(row)
+
+
+@app.post("/api/radar/scan", tags=["Radar IA"])
+async def radar_scan(req: RadarScanRequest | None = None):
+    """Ejecutar escaneo completo: fuentes → insertar → enriquecer con IA"""
+    if req is None:
+        req = RadarScanRequest()
+    start = datetime.now()
+    all_raw = []
+    fuentes_ok = 0
+    fuentes_error = 0
+    errors = []
+
+    # 1. Leer queries activas
+    async with async_session() as session:
+        result = await session.execute(
+            text("SELECT * FROM hgu_radar_queries WHERE activo = TRUE"))
+        queries = [dict(r) for r in result.mappings().all()]
+    if req.fuentes:
+        queries = [q for q in queries if q["fuente"] in req.fuentes]
+
+    # 2. Escanear cada query
+    async with httpx.AsyncClient() as client:
+        for qr in queries:
+            scanner = _RADAR_SCANNERS.get(qr["fuente"])
+            if not scanner:
+                continue
+            try:
+                found = await scanner(client, qr["query_text"], qr["categoria"])
+                all_raw.extend(found)
+                fuentes_ok += 1
+            except Exception as e:
+                fuentes_error += 1
+                errors.append(f"{qr['fuente']}/{qr['query_text'][:30]}: {str(e)[:100]}")
+            await asyncio.sleep(_RADAR_DELAYS.get(qr["fuente"], 0.3))
+
+    # 3. Insertar deduplicando por (fuente, fuente_id)
+    items_nuevos = 0
+    items_dupes = 0
+    new_ids = []
+    async with async_session() as session:
+        for it in all_raw:
+            if not it.get("fuente_id"):
+                continue
+            try:
+                fp = _safe_date(it.get("fecha_publicacion"))
+                jr = json.dumps(it.get("json_raw", {}), ensure_ascii=False)
+                result = await session.execute(text("""
+                    INSERT INTO hgu_radar_items
+                        (titulo, resumen, categoria, fuente, fuente_id, url_original, fecha_publicacion, json_raw)
+                    VALUES (:titulo, :resumen, :cat, :fuente, :fid, :url, :fp, CAST(:jr AS jsonb))
+                    ON CONFLICT (fuente, fuente_id) DO NOTHING
+                    RETURNING id
+                """), {
+                    "titulo": it["titulo"], "resumen": it.get("resumen"),
+                    "cat": it["categoria"], "fuente": it["fuente"],
+                    "fid": it["fuente_id"], "url": it["url_original"],
+                    "fp": fp, "jr": jr
+                })
+                row = result.first()
+                if row:
+                    items_nuevos += 1
+                    new_ids.append(row[0])
+                else:
+                    items_dupes += 1
+            except Exception:
+                items_dupes += 1
+        await session.commit()
+
+    # 4. Enriquecer nuevos con Groq/Llama (máx 20 por rate limit)
+    enriched = 0
+    if new_ids:
+        async with httpx.AsyncClient() as client:
+            for nid in new_ids[:20]:
+                async with async_session() as session:
+                    r = await session.execute(
+                        text("SELECT titulo, resumen FROM hgu_radar_items WHERE id = :id"),
+                        {"id": nid})
+                    row = r.mappings().first()
+                if row:
+                    ok = await _radar_enrich_one(client, nid, row["titulo"], row["resumen"])
+                    if ok:
+                        enriched += 1
+                    await asyncio.sleep(2)  # Rate limit Groq free: 30 req/min
+
+    # 5. Registrar en log
+    dur = (datetime.now() - start).total_seconds()
+    async with async_session() as session:
+        await session.execute(text("""
+            INSERT INTO hgu_radar_log
+                (tipo, fuentes_ok, fuentes_error, items_nuevos, items_duplicados, duracion_seg, detalles)
+            VALUES ('MANUAL', :ok, :err, :nue, :dup, :dur, CAST(:det AS jsonb))
+        """), {
+            "ok": fuentes_ok, "err": fuentes_error,
+            "nue": items_nuevos, "dup": items_dupes,
+            "dur": round(dur, 1),
+            "det": json.dumps({"errors": errors, "enriched": enriched}, ensure_ascii=False)
+        })
+        await session.commit()
+
+    return {
+        "status": "OK", "items_nuevos": items_nuevos,
+        "items_duplicados": items_dupes, "items_enriquecidos": enriched,
+        "fuentes_ok": fuentes_ok, "fuentes_error": fuentes_error,
+        "duracion_seg": round(dur, 1), "errors": errors
+    }
+
+
+@app.post("/api/radar/enrich/{item_id}", tags=["Radar IA"])
+async def radar_enrich(item_id: int):
+    """Enriquecer un ítem concreto con Groq/Llama"""
+    async with async_session() as session:
+        r = await session.execute(
+            text("SELECT id, titulo, resumen FROM hgu_radar_items WHERE id = :id"),
+            {"id": item_id})
+        row = r.mappings().first()
+        if not row:
+            raise HTTPException(404, "Ítem no encontrado")
+    async with httpx.AsyncClient() as client:
+        ok = await _radar_enrich_one(client, item_id, row["titulo"], row["resumen"])
+    if not ok:
+        raise HTTPException(502, "Error al enriquecer con Groq/Llama")
+    async with async_session() as session:
+        r = await session.execute(
+            text("SELECT * FROM hgu_radar_items WHERE id = :id"), {"id": item_id})
+        return dict(r.mappings().first())
+
+
+@app.post("/api/radar/toggle-favorito", tags=["Radar IA"])
+async def radar_toggle_fav(body: RadarToggleFav):
+    """Toggle favorito de un ítem"""
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_radar_items SET favorito = NOT favorito WHERE id = :id"),
+            {"id": body.item_id})
+        await session.commit()
+        r = await session.execute(
+            text("SELECT favorito FROM hgu_radar_items WHERE id = :id"),
+            {"id": body.item_id})
+        row = r.mappings().first()
+        return {"id": body.item_id, "favorito": row["favorito"] if row else False}
+
+
+@app.post("/api/radar/set-nota", tags=["Radar IA"])
+async def radar_set_nota(body: RadarSetNota):
+    """Guardar nota del usuario en un ítem"""
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_radar_items SET nota_usuario = :nota WHERE id = :id"),
+            {"id": body.item_id, "nota": body.nota})
+        await session.commit()
+    return {"status": "OK"}
+
+
+@app.post("/api/radar/set-prioridad", tags=["Radar IA"])
+async def radar_set_prioridad(body: RadarSetPrioridad):
+    """Guardar prioridad del usuario"""
+    if body.prioridad not in ('ALTA', 'MEDIA', 'BAJA'):
+        raise HTTPException(400, "Prioridad debe ser ALTA, MEDIA o BAJA")
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_radar_items SET prioridad_usuario = :p WHERE id = :id"),
+            {"id": body.item_id, "p": body.prioridad})
+        await session.commit()
+    return {"status": "OK"}
+
+
+@app.post("/api/radar/archivar/{item_id}", tags=["Radar IA"])
+async def radar_archivar(item_id: int):
+    """Archivar un ítem (no se muestra en listados)"""
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_radar_items SET archivado = TRUE WHERE id = :id"),
+            {"id": item_id})
+        await session.commit()
+    return {"status": "OK"}
+
+
+@app.get("/api/radar/stats", tags=["Radar IA"])
+async def radar_stats():
+    """Estadísticas del radar: totales, por categoría, último scan"""
+    async with async_session() as session:
+        total = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_radar_items WHERE archivado = FALSE"))).scalar()
+        nuevos = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_radar_items WHERE archivado = FALSE AND fecha_scan >= NOW() - INTERVAL '7 days'"))).scalar()
+        favs = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_radar_items WHERE favorito = TRUE AND archivado = FALSE"))).scalar()
+        no_leidos = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_radar_items WHERE leido = FALSE AND archivado = FALSE"))).scalar()
+        cats = await session.execute(
+            text("SELECT categoria, COUNT(*) n FROM hgu_radar_items WHERE archivado = FALSE GROUP BY categoria ORDER BY n DESC"))
+        por_cat = {r["categoria"]: r["n"] for r in cats.mappings().all()}
+        ult = (await session.execute(
+            text("SELECT MAX(fecha_ejecucion) FROM hgu_radar_log"))).scalar()
+        return {
+            "total": total, "nuevos_semana": nuevos,
+            "favoritos": favs, "no_leidos": no_leidos,
+            "por_categoria": por_cat,
+            "ultimo_scan": ult.isoformat() if ult else None
+        }
+
+
+@app.get("/api/radar/favoritos", tags=["Radar IA"])
+async def radar_favoritos():
+    """Lista de favoritos (backlog de ideas) ordenada por prioridad + relevancia"""
+    async with async_session() as session:
+        result = await session.execute(text("""
+            SELECT * FROM hgu_radar_items
+            WHERE favorito = TRUE AND archivado = FALSE
+            ORDER BY CASE prioridad_usuario
+                WHEN 'ALTA' THEN 1 WHEN 'MEDIA' THEN 2 WHEN 'BAJA' THEN 3 ELSE 4 END,
+                relevancia DESC
+        """))
+        return [dict(r) for r in result.mappings().all()]
+
+
+# ═══════════════════════════════════════════════════════════════
+# ─── Catálogo APIs ────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════
+
+APIS_SYSTEM_PROMPT = """Eres un arquitecto de integración de sistemas de farmacia hospitalaria.
+Dada la siguiente API y su descripción, genera una propuesta de integración en SIGFAR Hub.
+Responde SOLO un JSON válido (sin markdown, sin backticks) con esta estructura:
+{"propuesta": "Párrafo de 3-5 frases explicando cómo integrar esta API en SIGFAR Hub, qué módulos beneficiaría y qué pasos seguir.", "prioridad_sugerida": "P1|P2|P3", "tiempo_estimado": "texto corto ej: 2-3 días", "modulos_beneficiados": ["módulo1","módulo2"], "ejemplo_uso": "Ejemplo concreto de un caso de uso clínico."}
+"""
+
+
+async def _api_test_connectivity(client: httpx.AsyncClient, api_row: dict) -> dict:
+    """Prueba conectividad real contra url_test de una API. Devuelve dict con resultado."""
+    url = api_row.get("url_test") or api_row.get("url_base")
+    if not url:
+        return {"ok": False, "latencia_ms": 0, "error": "Sin URL de test"}
+    headers = {}
+    if api_row.get("auth_type") in ("BEARER", "API_KEY") and api_row.get("env_var_key"):
+        key = os.getenv(api_row["env_var_key"], "")
+        if key and key != "sk-placeholder":
+            if api_row["auth_type"] == "BEARER":
+                headers["Authorization"] = f"Bearer {key}"
+            else:
+                headers["Authorization"] = f"Api-Key {key}"
+    try:
+        import time
+        t0 = time.monotonic()
+        r = await client.get(url, headers=headers, timeout=15, follow_redirects=True)
+        latencia = int((time.monotonic() - t0) * 1000)
+        ok = r.status_code < 400
+        return {"ok": ok, "latencia_ms": latencia, "status_code": r.status_code,
+                "error": None if ok else f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"ok": False, "latencia_ms": 0, "error": str(e)[:200]}
+
+
+@app.get("/api/apis/catalogo", tags=["APIs"])
+async def apis_catalogo(bloque: str | None = None, estado: str | None = None,
+                        prioridad: str | None = None, buscar: str | None = None,
+                        favorito: bool | None = None):
+    """Lista el catálogo de APIs con filtros opcionales"""
+    conds = []
+    params = {}
+    if bloque:
+        conds.append("bloque = :bloque")
+        params["bloque"] = bloque
+    if estado:
+        conds.append("estado = :estado")
+        params["estado"] = estado
+    if prioridad:
+        conds.append("prioridad = :prioridad")
+        params["prioridad"] = prioridad
+    if favorito:
+        conds.append("favorito = TRUE")
+    if buscar:
+        conds.append("(LOWER(nombre) LIKE :q OR LOWER(COALESCE(descripcion,'')) LIKE :q OR LOWER(COALESCE(caso_uso,'')) LIKE :q)")
+        params["q"] = f"%{buscar.lower()}%"
+    where = "WHERE " + " AND ".join(conds) if conds else ""
+    sql = f"""SELECT * FROM hgu_hub_apis {where}
+              ORDER BY CASE prioridad WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END,
+                       nombre"""
+    async with async_session() as session:
+        result = await session.execute(text(sql), params)
+        return [dict(r) for r in result.mappings().all()]
+
+
+@app.get("/api/apis/stats", tags=["APIs"])
+async def apis_stats():
+    """Estadísticas del catálogo de APIs"""
+    async with async_session() as session:
+        total = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_hub_apis"))).scalar()
+        conectadas = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_hub_apis WHERE estado = 'CONECTADA'"))).scalar()
+        pendientes = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_hub_apis WHERE estado = 'PENDIENTE'"))).scalar()
+        en_apex = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_hub_apis WHERE estado = 'EN_APEX'"))).scalar()
+        futuro = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_hub_apis WHERE estado = 'FUTURO'"))).scalar()
+        favs = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_hub_apis WHERE favorito = TRUE"))).scalar()
+        por_bloque = await session.execute(
+            text("SELECT bloque, COUNT(*) n FROM hgu_hub_apis GROUP BY bloque ORDER BY n DESC"))
+        bloques = {r["bloque"]: r["n"] for r in por_bloque.mappings().all()}
+        por_prio = await session.execute(
+            text("SELECT prioridad, COUNT(*) n FROM hgu_hub_apis WHERE prioridad IS NOT NULL GROUP BY prioridad ORDER BY prioridad"))
+        prioridades = {r["prioridad"]: r["n"] for r in por_prio.mappings().all()}
+        test_ok = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_hub_apis WHERE ultimo_test_ok = TRUE"))).scalar()
+        test_fail = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_hub_apis WHERE ultimo_test_ok = FALSE"))).scalar()
+        return {
+            "total": total, "conectadas": conectadas, "pendientes": pendientes,
+            "en_apex": en_apex, "futuro": futuro, "favoritos": favs,
+            "por_bloque": bloques, "por_prioridad": prioridades,
+            "test_ok": test_ok, "test_fail": test_fail
+        }
+
+
+@app.get("/api/apis/favoritos", tags=["APIs"])
+async def apis_favoritos():
+    """Lista de APIs favoritas ordenadas por prioridad_usuario → prioridad (backlog personal)"""
+    async with async_session() as session:
+        result = await session.execute(text("""
+            SELECT * FROM hgu_hub_apis
+            WHERE favorito = TRUE
+            ORDER BY CASE prioridad_usuario
+                WHEN 'ALTA' THEN 1 WHEN 'MEDIA' THEN 2 WHEN 'BAJA' THEN 3 ELSE 4 END,
+                CASE prioridad
+                WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 WHEN 'P3' THEN 3 ELSE 4 END,
+                nombre
+        """))
+        return [dict(r) for r in result.mappings().all()]
+
+
+@app.get("/api/apis/{api_id}", tags=["APIs"])
+async def apis_detail(api_id: int):
+    """Detalle completo de una API"""
+    async with async_session() as session:
+        result = await session.execute(
+            text("SELECT * FROM hgu_hub_apis WHERE id = :id"), {"id": api_id})
+        row = result.mappings().first()
+        if not row:
+            raise HTTPException(404, "API no encontrada")
+        return dict(row)
+
+
+@app.post("/api/apis/test/{api_id}", tags=["APIs"])
+async def apis_test(api_id: int):
+    """Testear conectividad de una API en tiempo real"""
+    async with async_session() as session:
+        result = await session.execute(
+            text("SELECT * FROM hgu_hub_apis WHERE id = :id"), {"id": api_id})
+        row = result.mappings().first()
+        if not row:
+            raise HTTPException(404, "API no encontrada")
+        api_data = dict(row)
+
+    async with httpx.AsyncClient() as client:
+        test_result = await _api_test_connectivity(client, api_data)
+
+    async with async_session() as session:
+        await session.execute(text("""
+            UPDATE hgu_hub_apis
+            SET ultimo_test = NOW(),
+                ultimo_test_ok = :ok,
+                ultimo_test_latencia_ms = :lat
+            WHERE id = :id
+        """), {"ok": test_result["ok"], "lat": test_result["latencia_ms"], "id": api_id})
+        await session.commit()
+
+    return {
+        "api_id": api_id, "nombre": api_data["nombre"],
+        **test_result
+    }
+
+
+@app.post("/api/apis/test-all", tags=["APIs"])
+async def apis_test_all():
+    """Testear conectividad de TODAS las APIs del catálogo"""
+    async with async_session() as session:
+        result = await session.execute(text("SELECT * FROM hgu_hub_apis ORDER BY id"))
+        apis = [dict(r) for r in result.mappings().all()]
+
+    results = []
+    async with httpx.AsyncClient() as client:
+        for api_data in apis:
+            test_result = await _api_test_connectivity(client, api_data)
+            async with async_session() as session:
+                await session.execute(text("""
+                    UPDATE hgu_hub_apis
+                    SET ultimo_test = NOW(),
+                        ultimo_test_ok = :ok,
+                        ultimo_test_latencia_ms = :lat
+                    WHERE id = :id
+                """), {"ok": test_result["ok"], "lat": test_result["latencia_ms"],
+                       "id": api_data["id"]})
+                await session.commit()
+            results.append({
+                "api_id": api_data["id"], "nombre": api_data["nombre"],
+                **test_result
+            })
+            await asyncio.sleep(0.3)
+
+    ok_count = sum(1 for r in results if r["ok"])
+    return {
+        "total": len(results), "ok": ok_count,
+        "fail": len(results) - ok_count,
+        "results": results
+    }
+
+
+@app.post("/api/apis/enrich/{api_id}", tags=["APIs"])
+async def apis_enrich(api_id: int):
+    """Generar propuesta de integración IA para una API"""
+    async with async_session() as session:
+        result = await session.execute(
+            text("SELECT * FROM hgu_hub_apis WHERE id = :id"), {"id": api_id})
+        row = result.mappings().first()
+        if not row:
+            raise HTTPException(404, "API no encontrada")
+        api_data = dict(row)
+
+    if not OPENAI_API_KEY or OPENAI_API_KEY == "sk-placeholder":
+        raise HTTPException(503, "Groq API key no configurada")
+
+    user_msg = (
+        f"API: {api_data['nombre']}\n"
+        f"Descripción: {api_data.get('descripcion', 'N/A')}\n"
+        f"URL: {api_data.get('url_base', 'N/A')}\n"
+        f"Bloque: {api_data.get('bloque', 'N/A')}\n"
+        f"Caso de uso actual: {api_data.get('caso_uso', 'N/A')}\n"
+        f"Módulo destino: {api_data.get('modulo_uso', 'N/A')}\n"
+        f"Estado actual: {api_data.get('estado', 'N/A')}"
+    )
+
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
+                         "Content-Type": "application/json"},
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": APIS_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_msg}
+                    ],
+                    "temperature": 0.3, "max_tokens": 600
+                },
+                timeout=30
+            )
+            r.raise_for_status()
+            raw = r.json()["choices"][0]["message"]["content"].strip()
+            raw = _re.sub(r'^```(?:json)?\s*', '', raw)
+            raw = _re.sub(r'\s*```$', '', raw)
+            data = json.loads(raw)
+        except Exception as e:
+            raise HTTPException(502, f"Error Groq: {str(e)[:200]}")
+
+    propuesta = data.get("propuesta", raw)
+    prioridad = data.get("prioridad_sugerida", api_data.get("prioridad"))
+    tiempo = data.get("tiempo_estimado", api_data.get("tiempo_estimado"))
+
+    async with async_session() as session:
+        await session.execute(text("""
+            UPDATE hgu_hub_apis
+            SET propuesta_ia = :prop,
+                prioridad = COALESCE(:prio, prioridad),
+                tiempo_estimado = COALESCE(:tiempo, tiempo_estimado)
+            WHERE id = :id
+        """), {"prop": propuesta, "prio": prioridad, "tiempo": tiempo, "id": api_id})
+        await session.commit()
+        result = await session.execute(
+            text("SELECT * FROM hgu_hub_apis WHERE id = :id"), {"id": api_id})
+        return dict(result.mappings().first())
+
+
+@app.post("/api/apis/toggle-favorito", tags=["APIs"])
+async def apis_toggle_fav(body: ApiToggleFav):
+    """Toggle favorito de una API"""
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_hub_apis SET favorito = NOT favorito WHERE id = :id"),
+            {"id": body.api_id})
+        await session.commit()
+        r = await session.execute(
+            text("SELECT favorito FROM hgu_hub_apis WHERE id = :id"),
+            {"id": body.api_id})
+        row = r.mappings().first()
+        return {"id": body.api_id, "favorito": row["favorito"] if row else False}
+
+
+@app.post("/api/apis/set-nota", tags=["APIs"])
+async def apis_set_nota(body: ApiSetNota):
+    """Guardar nota del usuario en una API"""
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_hub_apis SET nota_usuario = :nota WHERE id = :id"),
+            {"id": body.api_id, "nota": body.nota})
+        await session.commit()
+    return {"status": "OK"}
+
+
+@app.post("/api/apis/set-prioridad", tags=["APIs"])
+async def apis_set_prioridad(body: ApiSetPrioridad):
+    """Guardar prioridad personal del farmacéutico en una API"""
+    if body.prioridad not in ('ALTA', 'MEDIA', 'BAJA'):
+        raise HTTPException(400, "Prioridad debe ser ALTA, MEDIA o BAJA")
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_hub_apis SET prioridad_usuario = :p WHERE id = :id"),
+            {"id": body.api_id, "p": body.prioridad})
+        await session.commit()
+    return {"status": "OK"}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# ALGORITMOS ML — Catálogo de algoritmos de Machine Learning
+# ═══════════════════════════════════════════════════════════════════
+
+# --- Modelos Pydantic ML ---
+
+class MlToggleFav(BaseModel):
+    algoritmo_id: int
+
+class MlSetNota(BaseModel):
+    algoritmo_id: int
+    nota: str
+
+class MlSetPrioridad(BaseModel):
+    algoritmo_id: int
+    prioridad: str
+
+
+# --- Prompt para enriquecimiento IA de algoritmos ML ---
+
+ML_SYSTEM_PROMPT = """Eres un experto en Machine Learning aplicado a farmacia hospitalaria.
+Dado el siguiente algoritmo ML y su descripción, genera una propuesta detallada de implementación en SIGFAR Hub.
+Responde SOLO un JSON válido (sin markdown, sin backticks) con esta estructura:
+{"propuesta_ia": "Párrafo de 4-6 frases explicando cómo implementar este algoritmo en SIGFAR Hub: datos necesarios, pipeline de entrenamiento, integración con módulos existentes, métricas de evaluación y beneficio clínico esperado.", "datasets_sugeridos": ["dataset1","dataset2"], "librerias_alternativas": ["lib1","lib2"], "tiempo_implementacion": "texto corto ej: 2-4 semanas", "complejidad_real": "BAJA|MEDIA|ALTA|MUY_ALTA", "quick_win": true}
+
+Contexto SIGFAR Hub: plataforma multiagente IA para farmacia hospitalaria CHGUV. Módulos: nutrición artificial (P36), farmacocinética MAP Bayesiano (P42), PROA antimicrobianos (P43), detección EM/PRM (P15), NPD domiciliaria (P37), scoring complejidad (P40). Datos disponibles: prescripciones electrónicas, analíticas de laboratorio, microbiología, consumos de farmacia, registros de dispensación, alertas AEMPS."""
+
+
+# --- Endpoints ML ---
+
+@app.get("/api/ml/stats", tags=["Algoritmos ML"])
+async def ml_stats():
+    """Estadísticas del catálogo de algoritmos ML"""
+    async with async_session() as session:
+        r = await session.execute(text("""
+            SELECT
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE estado_sigfar_hub = 'IMPLEMENTADO') as implementados,
+                COUNT(*) FILTER (WHERE estado_sigfar_hub = 'EN_DESARROLLO') as en_desarrollo,
+                COUNT(*) FILTER (WHERE estado_sigfar_hub = 'NO_IMPLEMENTADO') as no_implementados,
+                COUNT(*) FILTER (WHERE favorito = true) as favoritos,
+                COUNT(DISTINCT categoria_farmacia) as categorias,
+                COUNT(DISTINCT tipo_ml) as tipos_ml
+            FROM hgu_ml_algoritmos
+        """))
+        stats = dict(r.mappings().first())
+
+        r2 = await session.execute(text("""
+            SELECT categoria_farmacia, COUNT(*) as n
+            FROM hgu_ml_algoritmos GROUP BY categoria_farmacia
+            ORDER BY n DESC
+        """))
+        stats["por_categoria"] = [dict(row) for row in r2.mappings().all()]
+
+        r3 = await session.execute(text("""
+            SELECT tipo_ml, COUNT(*) as n
+            FROM hgu_ml_algoritmos GROUP BY tipo_ml
+            ORDER BY n DESC
+        """))
+        stats["por_tipo"] = [dict(row) for row in r3.mappings().all()]
+
+        r4 = await session.execute(text("""
+            SELECT complejidad, COUNT(*) as n
+            FROM hgu_ml_algoritmos GROUP BY complejidad
+            ORDER BY n DESC
+        """))
+        stats["por_complejidad"] = [dict(row) for row in r4.mappings().all()]
+
+        return stats
+
+
+@app.get("/api/ml/favoritos", tags=["Algoritmos ML"])
+async def ml_favoritos():
+    """Lista de algoritmos ML marcados como favoritos"""
+    async with async_session() as session:
+        r = await session.execute(text(
+            "SELECT * FROM hgu_ml_algoritmos WHERE favorito = true ORDER BY nombre"
+        ))
+        return [dict(row) for row in r.mappings().all()]
+
+
+@app.get("/api/ml/algoritmos", tags=["Algoritmos ML"])
+async def ml_catalogo(
+    categoria: str | None = None,
+    tipo: str | None = None,
+    estado: str | None = None,
+    complejidad: str | None = None,
+    q: str | None = None
+):
+    """Catálogo de algoritmos ML con filtros opcionales"""
+    where = []
+    params = {}
+    if categoria:
+        where.append("categoria_farmacia = :cat")
+        params["cat"] = categoria
+    if tipo:
+        where.append("tipo_ml = :tipo")
+        params["tipo"] = tipo
+    if estado:
+        where.append("estado_sigfar_hub = :est")
+        params["est"] = estado
+    if complejidad:
+        where.append("complejidad = :comp")
+        params["comp"] = complejidad
+    if q:
+        where.append("(nombre ILIKE :q OR descripcion ILIKE :q OR caso_uso ILIKE :q)")
+        params["q"] = f"%{q}%"
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    async with async_session() as session:
+        r = await session.execute(
+            text(f"SELECT * FROM hgu_ml_algoritmos{clause} ORDER BY categoria_farmacia, nombre"),
+            params
+        )
+        return [dict(row) for row in r.mappings().all()]
+
+
+@app.get("/api/ml/algoritmos/{alg_id}", tags=["Algoritmos ML"])
+async def ml_detail(alg_id: int):
+    """Detalle de un algoritmo ML"""
+    async with async_session() as session:
+        r = await session.execute(
+            text("SELECT * FROM hgu_ml_algoritmos WHERE id = :id"), {"id": alg_id})
+        row = r.mappings().first()
+        if not row:
+            raise HTTPException(404, "Algoritmo no encontrado")
+        return dict(row)
+
+
+@app.post("/api/ml/enrich/{alg_id}", tags=["Algoritmos ML"])
+async def ml_enrich(alg_id: int):
+    """Generar propuesta IA para un algoritmo ML usando Groq"""
+    if not OPENAI_API_KEY:
+        raise HTTPException(500, "OPENAI_API_KEY no configurada")
+
+    async with async_session() as session:
+        r = await session.execute(
+            text("SELECT * FROM hgu_ml_algoritmos WHERE id = :id"), {"id": alg_id})
+        alg = r.mappings().first()
+        if not alg:
+            raise HTTPException(404, "Algoritmo no encontrado")
+        alg_data = dict(alg)
+
+    user_msg = (
+        f"Algoritmo: {alg_data['nombre']} ({alg_data['nombre_tecnico']})\n"
+        f"Tipo ML: {alg_data['tipo_ml']}\n"
+        f"Categoría farmacia: {alg_data['categoria_farmacia']}\n"
+        f"Descripción: {alg_data['descripcion']}\n"
+        f"Caso de uso: {alg_data['caso_uso']}\n"
+        f"Ejemplo SIGFAR: {alg_data.get('ejemplo_sigfar', 'N/A')}\n"
+        f"Librerías: {alg_data.get('librerias_python', 'N/A')}\n"
+        f"Datos necesarios: {alg_data.get('datos_necesarios', 'N/A')}\n"
+        f"Complejidad: {alg_data['complejidad']}\n"
+        f"Estado actual: {alg_data['estado_sigfar_hub']}\n"
+        f"Módulo SIGFAR: {alg_data.get('modulo_sigfar', 'N/A')}"
+    )
+
+    async with httpx.AsyncClient() as client:
+        try:
+            r = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
+                         "Content-Type": "application/json"},
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": ML_SYSTEM_PROMPT},
+                        {"role": "user", "content": user_msg}
+                    ],
+                    "temperature": 0.3, "max_tokens": 800
+                },
+                timeout=30
+            )
+            r.raise_for_status()
+            raw = r.json()["choices"][0]["message"]["content"].strip()
+            raw = _re.sub(r'^```(?:json)?\s*', '', raw)
+            raw = _re.sub(r'\s*```$', '', raw)
+            data = json.loads(raw)
+        except Exception as e:
+            raise HTTPException(502, f"Error Groq: {str(e)[:200]}")
+
+    propuesta = data.get("propuesta_ia", raw)
+
+    async with async_session() as session:
+        await session.execute(text("""
+            UPDATE hgu_ml_algoritmos
+            SET propuesta_ia = :prop
+            WHERE id = :id
+        """), {"prop": propuesta, "id": alg_id})
+        await session.commit()
+        result = await session.execute(
+            text("SELECT * FROM hgu_ml_algoritmos WHERE id = :id"), {"id": alg_id})
+        return dict(result.mappings().first())
+
+
+@app.post("/api/ml/toggle-favorito", tags=["Algoritmos ML"])
+async def ml_toggle_fav(body: MlToggleFav):
+    """Toggle favorito de un algoritmo ML"""
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_ml_algoritmos SET favorito = NOT favorito WHERE id = :id"),
+            {"id": body.algoritmo_id})
+        await session.commit()
+        r = await session.execute(
+            text("SELECT favorito FROM hgu_ml_algoritmos WHERE id = :id"),
+            {"id": body.algoritmo_id})
+        row = r.mappings().first()
+        return {"id": body.algoritmo_id, "favorito": row["favorito"] if row else False}
+
+
+@app.post("/api/ml/set-nota", tags=["Algoritmos ML"])
+async def ml_set_nota(body: MlSetNota):
+    """Guardar nota del usuario en un algoritmo ML"""
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_ml_algoritmos SET nota_usuario = :nota WHERE id = :id"),
+            {"id": body.algoritmo_id, "nota": body.nota})
+        await session.commit()
+    return {"status": "OK"}
+
+
+@app.post("/api/ml/set-prioridad", tags=["Algoritmos ML"])
+async def ml_set_prioridad(body: MlSetPrioridad):
+    """Guardar prioridad personal del farmacéutico en un algoritmo ML"""
+    if body.prioridad not in ('ALTA', 'MEDIA', 'BAJA'):
+        raise HTTPException(400, "Prioridad debe ser ALTA, MEDIA o BAJA")
+    async with async_session() as session:
+        await session.execute(
+            text("UPDATE hgu_ml_algoritmos SET prioridad_usuario = :p WHERE id = :id"),
+            {"id": body.algoritmo_id, "p": body.prioridad})
+        await session.commit()
+    return {"status": "OK"}
+
+

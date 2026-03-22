@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Link, useParams } from 'react-router-dom'
 import Markdown from 'react-markdown'
-import { Activity, AlertTriangle, BarChart3, Brain, Building2, CheckCircle2, ChevronDown, ChevronRight, Clipboard, Clock, Database, FileText, FlaskConical, Heart, Home, LayoutDashboard, Mic, MicOff, MonitorSmartphone, Network, Pill, Send, Server, Shield, ShieldAlert, Stethoscope, TrendingDown, TrendingUp, Users, Volume2, VolumeX, Wallet, Zap } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, Archive, BarChart3, BookOpen, Brain, BrainCircuit, Building2, Calculator, CheckCircle2, ChevronDown, ChevronRight, Clipboard, Clock, Cpu, Database, ExternalLink, FileText, Filter, FlaskConical, Gauge, GitBranch, Globe, Heart, Home, Hourglass, Hospital, Info, Layers, LayoutDashboard, Mic, MicOff, MonitorSmartphone, Network, Pill, Plug, Radar, RefreshCw, Search, Send, Server, Shield, ShieldAlert, Star, Stethoscope, StickyNote, Tags, Target, TrendingDown, TrendingUp, Users, Volume2, VolumeX, Wallet, Wifi, WifiOff, XCircle, Zap } from 'lucide-react'
 import './style.css'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -31,11 +31,14 @@ function Nav() {
         <span className="sf-nav-badge">CHGUV</span>
       </div>
       <div className="sf-nav-links">
+        <Link to="/radar"><span className="nav-icon"><Radar size={16}/></span>Radar IA</Link>
+        <Link to="/apis"><span className="nav-icon"><Plug size={16}/></span>APIs</Link>
+        <Link to="/ml"><span className="nav-icon"><BrainCircuit size={16}/></span>Algoritmos ML</Link>
+        <Link to="/integraciones"><span className="nav-icon"><Network size={16}/></span>Integraciones</Link>
+        <Link to="/jefatura"><span className="nav-icon"><Building2 size={16}/></span>Dirección Servicio Farmacia</Link>
         <Link to="/"><span className="nav-icon"><LayoutDashboard size={16}/></span>Dashboard</Link>
         <Link to="/pacientes"><span className="nav-icon"><Users size={16}/></span>Pacientes</Link>
         <Link to="/emprm"><span className="nav-icon"><ShieldAlert size={16}/></span>EM/PRM</Link>
-        <Link to="/integraciones"><span className="nav-icon"><Network size={16}/></span>Integraciones</Link>
-        <Link to="/jefatura"><span className="nav-icon"><BarChart3 size={16}/></span>Jefatura</Link>
       </div>
     </nav>
   )
@@ -1052,6 +1055,1014 @@ function Jefatura() {
   )
 }
 
+/* ═══ Radar IA ═══ */
+
+const RADAR_CATS = ['VALIDACION','FARMACOCINETICA','NUTRICION','PROA','ELABORACION','STOCK_LOGISTICA','ROBOTICA','FARMACOECONOMIA','CUADRO_MANDOS','REGULACION']
+const RADAR_CAT_LABELS = {
+  VALIDACION:'Validación', FARMACOCINETICA:'Farmacocinética', NUTRICION:'Nutrición', PROA:'PROA',
+  ELABORACION:'Elaboración', STOCK_LOGISTICA:'Stock/Logística', ROBOTICA:'Robótica',
+  FARMACOECONOMIA:'Farmacoeconomía', CUADRO_MANDOS:'Cuadro Mandos', REGULACION:'Regulación'
+}
+const RADAR_CAT_ICONS = {
+  VALIDACION: ShieldAlert, FARMACOCINETICA: FlaskConical, NUTRICION: Heart, PROA: Shield,
+  ELABORACION: Pill, STOCK_LOGISTICA: Database, ROBOTICA: Zap,
+  FARMACOECONOMIA: Wallet, CUADRO_MANDOS: BarChart3, REGULACION: FileText
+}
+const RADAR_ESTADOS = ['IMPLEMENTADO','PARCIAL','PLANIFICADO','NUEVO']
+const RADAR_FUENTES = ['PUBMED','GOOGLE_NEWS','CLINICALTRIALS','SEMANTIC']
+const RADAR_FUENTE_LABELS = {PUBMED:'PubMed', GOOGLE_NEWS:'Google News', CLINICALTRIALS:'ClinicalTrials', SEMANTIC:'Semantic Scholar'}
+const RADAR_ESTADO_ICONS = { IMPLEMENTADO: CheckCircle2, PARCIAL: Clock, PLANIFICADO: Hourglass, NUEVO: AlertCircle }
+const RADAR_ESTADO_COLORS = { IMPLEMENTADO: '#16a34a', PARCIAL: '#ea580c', PLANIFICADO: '#2563eb', NUEVO: '#dc2626' }
+
+function isoToFlag(code) {
+  if (!code || code.length !== 2) return '🌐'
+  return String.fromCodePoint(...[...code.toUpperCase()].map(c => 0x1F1E6 - 65 + c.charCodeAt(0)))
+}
+
+function RadarIA() {
+  const [items, setItems] = React.useState([])
+  const [stats, setStats] = React.useState({})
+  const [favs, setFavs] = React.useState([])
+  const [loading, setLoading] = React.useState(true)
+  const [scanning, setScanning] = React.useState(false)
+  const [scanResult, setScanResult] = React.useState(null)
+  const [tab, setTab] = React.useState('radar')
+  const [fCat, setFCat] = React.useState('')
+  const [fEstado, setFEstado] = React.useState('')
+  const [fFuente, setFFuente] = React.useState('')
+  const [fFav, setFFav] = React.useState(false)
+  const [fBuscar, setFBuscar] = React.useState('')
+  const [fPeriodo, setFPeriodo] = React.useState('')
+  const [notaModal, setNotaModal] = React.useState(null)
+  const [notaText, setNotaText] = React.useState('')
+
+  const loadItems = React.useCallback(() => {
+    setLoading(true)
+    const p = new URLSearchParams()
+    if (fCat) p.set('categoria', fCat)
+    if (fEstado) p.set('estado', fEstado)
+    if (fFuente) p.set('fuente', fFuente)
+    if (fFav) p.set('favorito', 'true')
+    if (fBuscar) p.set('buscar', fBuscar)
+    if (fPeriodo) p.set('periodo', fPeriodo)
+    p.set('limit', '150')
+    fetch(`${API}/api/radar/items?${p}`).then(r => r.json()).then(d => { setItems(d); setLoading(false) }).catch(() => setLoading(false))
+  }, [fCat, fEstado, fFuente, fFav, fBuscar, fPeriodo])
+
+  const loadStats = () => { fetch(`${API}/api/radar/stats`).then(r => r.json()).then(setStats).catch(() => {}) }
+  const loadFavs = () => { fetch(`${API}/api/radar/favoritos`).then(r => r.json()).then(setFavs).catch(() => {}) }
+
+  React.useEffect(() => { loadItems(); loadStats() }, [loadItems])
+  React.useEffect(() => { if (tab === 'favoritos') loadFavs() }, [tab])
+
+  const doScan = async () => {
+    setScanning(true); setScanResult(null)
+    try {
+      const r = await fetch(`${API}/api/radar/scan`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+      const d = await r.json(); setScanResult(d); loadItems(); loadStats()
+    } catch (e) { setScanResult({ status: 'ERROR', error: e.message }) }
+    setScanning(false)
+  }
+
+  const toggleFav = async (id) => {
+    try {
+      const r = await fetch(`${API}/api/radar/toggle-favorito`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({item_id: id}) })
+      const d = await r.json()
+      setItems(prev => prev.map(it => it.id === id ? {...it, favorito: d.favorito} : it))
+      loadStats()
+    } catch {}
+  }
+
+  const saveNota = async () => {
+    if (!notaModal) return
+    try {
+      await fetch(`${API}/api/radar/set-nota`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({item_id: notaModal, nota: notaText}) })
+      setItems(prev => prev.map(it => it.id === notaModal ? {...it, nota_usuario: notaText} : it))
+    } catch {}
+    setNotaModal(null)
+  }
+
+  const setPrioridad = async (id, p) => {
+    try {
+      await fetch(`${API}/api/radar/set-prioridad`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({item_id: id, prioridad: p}) })
+      setFavs(prev => prev.map(it => it.id === id ? {...it, prioridad_usuario: p} : it))
+    } catch {}
+  }
+
+  const archivar = async (id) => {
+    try { await fetch(`${API}/api/radar/archivar/${id}`, { method:'POST' }); setItems(prev => prev.filter(it => it.id !== id)); loadStats() } catch {}
+  }
+
+  const relColor = (r) => r >= 80 ? '#16a34a' : r >= 60 ? '#ca8a04' : r >= 40 ? '#ea580c' : '#dc2626'
+  const estadoLabel = (e) => ({IMPLEMENTADO:'Implementado', PARCIAL:'Parcial', PLANIFICADO:'Planificado', NUEVO:'Nuevo'}[e] || e)
+  const maxCat = Math.max(1, ...Object.values(stats.por_categoria || {}))
+
+  return (
+    <div className="radar-page">
+      <div className="radar-header">
+        <div>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:6}}>
+            <Radar size={28} color="#fff" />
+            <h1 style={{fontSize:24,fontWeight:800,color:'#fff',margin:0}}>SIGFAR Hub · Radar IA</h1>
+            <span className="live-badge"><span className="live-dot"></span>LIVE</span>
+          </div>
+          <p style={{fontSize:13,color:'rgba(255,255,255,.7)',margin:0}}>Monitorización inteligente de novedades IA en farmacia hospitalaria</p>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:16}}>
+          <div style={{textAlign:'right',color:'#fff'}}>
+            <div style={{fontSize:13,opacity:.7}}>Ítems</div>
+            <div style={{fontSize:28,fontWeight:800}}>{stats.total || 0}</div>
+          </div>
+          <div style={{textAlign:'right',color:'#fff'}}>
+            <div style={{fontSize:13,opacity:.7}}>Nuevos (7d)</div>
+            <div style={{fontSize:28,fontWeight:800}}>{stats.nuevos_semana || 0}</div>
+          </div>
+          <div style={{textAlign:'right',color:'#fff'}}>
+            <div style={{fontSize:13,opacity:.7}}>Favoritos</div>
+            <div style={{fontSize:28,fontWeight:800,color:'#fbbf24'}}>{stats.favoritos || 0}</div>
+          </div>
+          <button className="radar-scan-btn" onClick={doScan} disabled={scanning}>
+            {scanning ? <><span className="radar-spinner"></span> Escaneando...</> : <><RefreshCw size={16}/> Actualizar</>}
+          </button>
+        </div>
+      </div>
+
+      {scanResult && (
+        <div className={`radar-scan-result ${scanResult.status === 'OK' ? 'ok' : 'err'}`}>
+          {scanResult.status === 'OK'
+            ? <><CheckCircle2 size={16}/> Escaneo completado en {scanResult.duracion_seg}s — {scanResult.items_nuevos} nuevos, {scanResult.items_duplicados} duplicados, {scanResult.items_enriquecidos} enriquecidos</>
+            : <><XCircle size={16}/> Error: {scanResult.error || 'Error desconocido'}</>}
+          <button onClick={() => setScanResult(null)} style={{marginLeft:12,background:'none',border:'none',cursor:'pointer',fontSize:16}}>×</button>
+        </div>
+      )}
+
+      <div className="radar-tabs">
+        <button className={tab==='radar'?'active':''} onClick={()=>setTab('radar')}><Radar size={14}/> Radar</button>
+        <button className={tab==='favoritos'?'active':''} onClick={()=>setTab('favoritos')}><Star size={14}/> Favoritos ({stats.favoritos||0})</button>
+        <button className={tab==='stats'?'active':''} onClick={()=>setTab('stats')}><BarChart3 size={14}/> Estadísticas</button>
+      </div>
+
+      {tab === 'radar' && <>
+        <div className="radar-filters">
+          <Filter size={16} style={{color:'#64748b',flexShrink:0}} />
+          <select value={fCat} onChange={e=>setFCat(e.target.value)}>
+            <option value="">Todas las categorías</option>
+            {RADAR_CATS.map(c => <option key={c} value={c}>{RADAR_CAT_LABELS[c]}</option>)}
+          </select>
+          <select value={fEstado} onChange={e=>setFEstado(e.target.value)}>
+            <option value="">Todos los estados</option>
+            {RADAR_ESTADOS.map(e => <option key={e} value={e}>{estadoLabel(e)}</option>)}
+          </select>
+          <select value={fFuente} onChange={e=>setFFuente(e.target.value)}>
+            <option value="">Todas las fuentes</option>
+            {RADAR_FUENTES.map(f => <option key={f} value={f}>{RADAR_FUENTE_LABELS[f]}</option>)}
+          </select>
+          <select value={fPeriodo} onChange={e=>setFPeriodo(e.target.value)}>
+            <option value="">Todo el período</option>
+            <option value="7">Última semana</option>
+            <option value="30">Último mes</option>
+            <option value="90">Últimos 3 meses</option>
+          </select>
+          <label className="radar-fav-toggle">
+            <input type="checkbox" checked={fFav} onChange={e=>setFFav(e.target.checked)} />
+            <Star size={12}/> Solo favoritos
+          </label>
+          <div className="radar-search-wrap">
+            <Search size={14} className="radar-search-icon" />
+            <input className="radar-search" type="text" placeholder="Buscar..." value={fBuscar} onChange={e=>setFBuscar(e.target.value)} />
+          </div>
+        </div>
+
+        {loading ? <div className="sf-loading">Cargando ítems del radar...</div> : (
+          items.length === 0 ? (
+            <div className="radar-empty">
+              <Radar size={48} style={{opacity:.3,marginBottom:12}} />
+              <p>No hay ítems. Pulsa "Actualizar" para escanear las fuentes.</p>
+            </div>
+          ) : (
+            <div className="radar-grid">
+              {items.map(it => {
+                const CatIcon = RADAR_CAT_ICONS[it.categoria] || FileText
+                const EstIcon = RADAR_ESTADO_ICONS[it.estado_sigfar_hub] || AlertCircle
+                const estColor = RADAR_ESTADO_COLORS[it.estado_sigfar_hub] || '#dc2626'
+                return (
+                  <div key={it.id} className={`radar-card ${it.leido ? 'read' : ''}`}>
+                    <div className="radar-card-top">
+                      <span className="radar-flag">{isoToFlag(it.pais)}</span>
+                      <span className="cat-tag"><CatIcon size={10}/> {RADAR_CAT_LABELS[it.categoria] || it.categoria}</span>
+                      <span className="radar-fuente-tag">{RADAR_FUENTE_LABELS[it.fuente] || it.fuente}</span>
+                      <span className="metric-badge" style={{background:relColor(it.relevancia),color:'#fff'}}>{it.relevancia}%</span>
+                      <button className="fav-btn" onClick={()=>toggleFav(it.id)} title={it.favorito?'Quitar favorito':'Añadir favorito'}>
+                        <Star size={16} fill={it.favorito ? 'currentColor' : 'none'} color={it.favorito ? '#f59e0b' : '#94a3b8'} />
+                      </button>
+                    </div>
+                    <h4 className="radar-card-title">
+                      <a href={it.url_original} target="_blank" rel="noreferrer">{it.titulo}</a>
+                    </h4>
+                    {it.institucion && <div className="radar-card-inst">{it.institucion}</div>}
+                    <p className="radar-card-resumen">{it.resumen_ia || it.resumen || 'Sin resumen disponible'}</p>
+                    {it.como_en_sigfar_hub && (
+                      <div className="radar-sigfar-box">
+                        <Brain size={12}/> <strong>En SIGFAR Hub:</strong> {it.como_en_sigfar_hub}
+                      </div>
+                    )}
+                    <div className="radar-card-bottom">
+                      <span className="radar-estado-badge" style={{color: estColor, borderColor: estColor}}>
+                        <EstIcon size={12}/> {estadoLabel(it.estado_sigfar_hub)}
+                      </span>
+                      {it.modulo_sigfar && <span className="radar-modulo">{it.modulo_sigfar}</span>}
+                      {it.fecha_publicacion && <span className="radar-date"><Clock size={10}/> {it.fecha_publicacion}</span>}
+                      <div className="radar-card-actions">
+                        <button onClick={()=>{setNotaModal(it.id);setNotaText(it.nota_usuario||'')}} title="Añadir nota"><StickyNote size={14}/></button>
+                        <button onClick={()=>archivar(it.id)} title="Archivar"><Archive size={14}/></button>
+                        <a href={it.url_original} target="_blank" rel="noreferrer" className="radar-link-btn"><ExternalLink size={12}/> Ver fuente</a>
+                      </div>
+                    </div>
+                    {it.tags && <div className="radar-tags">{it.tags.split(',').map((t,i)=><span key={i} className="radar-tag">{t.trim()}</span>)}</div>}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        )}
+      </>}
+
+      {tab === 'favoritos' && (
+        <div className="radar-favs-section">
+          <h3 style={{fontSize:18,fontWeight:700,marginBottom:16}}><Star size={18} color="#f59e0b"/> Backlog de ideas — Favoritos ({favs.length})</h3>
+          {favs.length === 0 ? <p style={{color:'#64748b'}}>No hay favoritos todavía. Marca ítems con <Star size={12}/> para añadirlos aquí.</p> : (
+            <div className="radar-grid">
+              {favs.map(f => {
+                const CatIcon = RADAR_CAT_ICONS[f.categoria] || FileText
+                const prioIcon = f.prioridad_usuario === 'ALTA' ? AlertTriangle : f.prioridad_usuario === 'MEDIA' ? AlertCircle : Info
+                const PrioIcon = prioIcon
+                return (
+                  <div key={f.id} className="radar-card">
+                    <div className="radar-card-top">
+                      <span className="radar-flag">{isoToFlag(f.pais)}</span>
+                      <span className="cat-tag"><CatIcon size={10}/> {RADAR_CAT_LABELS[f.categoria]||f.categoria}</span>
+                      <span className="metric-badge" style={{background:relColor(f.relevancia),color:'#fff'}}>{f.relevancia}%</span>
+                      <select value={f.prioridad_usuario||''} onChange={e=>setPrioridad(f.id,e.target.value)} className="radar-prio-select">
+                        <option value="">Prioridad...</option>
+                        <option value="ALTA">Alta</option>
+                        <option value="MEDIA">Media</option>
+                        <option value="BAJA">Baja</option>
+                      </select>
+                    </div>
+                    <h4 className="radar-card-title">
+                      <a href={f.url_original} target="_blank" rel="noreferrer">{f.titulo}</a>
+                    </h4>
+                    <p className="radar-card-resumen">{f.resumen_ia || f.resumen || 'Sin resumen'}</p>
+                    {f.nota_usuario && <div className="radar-nota-preview"><StickyNote size={12}/> {f.nota_usuario}</div>}
+                    <div className="radar-card-bottom">
+                      {f.prioridad_usuario && <span className={`prio-badge prio-${f.prioridad_usuario.toLowerCase()}`}><PrioIcon size={12}/> {f.prioridad_usuario}</span>}
+                      <span style={{fontSize:11,color:'#94a3b8'}}>{RADAR_FUENTE_LABELS[f.fuente]||f.fuente}</span>
+                      <a href={f.url_original} target="_blank" rel="noreferrer" className="radar-link-btn"><ExternalLink size={12}/> Fuente</a>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'stats' && (
+        <div className="radar-stats-section">
+          <div className="radar-stats-cards">
+            <div className="radar-stat-card"><div className="radar-stat-val">{stats.total||0}</div><div className="radar-stat-label">Total ítems</div></div>
+            <div className="radar-stat-card"><div className="radar-stat-val">{stats.nuevos_semana||0}</div><div className="radar-stat-label">Nuevos (7 días)</div></div>
+            <div className="radar-stat-card"><div className="radar-stat-val" style={{color:'#d97706'}}>{stats.favoritos||0}</div><div className="radar-stat-label">Favoritos</div></div>
+            <div className="radar-stat-card"><div className="radar-stat-val">{stats.no_leidos||0}</div><div className="radar-stat-label">No leídos</div></div>
+          </div>
+          <h3 style={{fontSize:16,fontWeight:700,margin:'24px 0 16px'}}><BarChart3 size={16}/> Ítems por categoría</h3>
+          <div className="radar-bars">
+            {RADAR_CATS.map(c => {
+              const n = (stats.por_categoria||{})[c] || 0
+              const pct = maxCat > 0 ? (n / maxCat * 100) : 0
+              const CIcon = RADAR_CAT_ICONS[c] || FileText
+              return (
+                <div key={c} className="radar-bar-row">
+                  <span className="radar-bar-label"><CIcon size={12}/> {RADAR_CAT_LABELS[c]}</span>
+                  <div className="radar-bar-track"><div className="radar-bar-fill" style={{width:`${pct}%`}}></div></div>
+                  <span className="radar-bar-val">{n}</span>
+                </div>
+              )
+            })}
+          </div>
+          {stats.ultimo_scan && <p style={{fontSize:12,color:'#94a3b8',marginTop:16}}>Último escaneo: {new Date(stats.ultimo_scan).toLocaleString('es-ES')}</p>}
+        </div>
+      )}
+
+      {notaModal && (
+        <div className="radar-modal-overlay" onClick={()=>setNotaModal(null)}>
+          <div className="radar-modal" onClick={e=>e.stopPropagation()}>
+            <h4><StickyNote size={16}/> Nota del farmacéutico</h4>
+            <textarea value={notaText} onChange={e=>setNotaText(e.target.value)} rows={4} placeholder="Escribe tu nota aquí..." />
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:12}}>
+              <button className="radar-modal-cancel" onClick={()=>setNotaModal(null)}>Cancelar</button>
+              <button className="radar-modal-save" onClick={saveNota}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {scanning && (
+        <div className="radar-scanning-overlay">
+          <div className="radar-scanning-box">
+            <RefreshCw size={40} className="radar-spin-icon" />
+            <h3>Escaneando fuentes...</h3>
+            <p>PubMed, Google News, ClinicalTrials, Semantic Scholar</p>
+            <p style={{fontSize:12,color:'#94a3b8'}}>Esto puede tardar 1-2 minutos (enriquecimiento con IA incluido)</p>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ═══ Catálogo APIs ═══ */
+const BLOQUE_LABELS = {
+  IA_GENERATIVA: 'IA Generativa', MEDICAMENTOS: 'Medicamentos', EVIDENCIA: 'Evidencia',
+  CODIFICACION: 'Codificación', SEGURIDAD: 'Seguridad', CALCULADORAS: 'Calculadoras', HOSPITAL: 'Hospital'
+}
+const BLOQUE_ICONS = {
+  IA_GENERATIVA: Brain, MEDICAMENTOS: Pill, EVIDENCIA: BookOpen,
+  CODIFICACION: Tags, SEGURIDAD: ShieldAlert, CALCULADORAS: Calculator, HOSPITAL: Hospital
+}
+const API_ESTADO_ICONS = { CONECTADA: CheckCircle2, EN_APEX: Database, PENDIENTE: Clock, FUTURO: Hourglass }
+const API_ESTADO_COLORS = { CONECTADA: '#16a34a', EN_APEX: '#2563eb', PENDIENTE: '#ea580c', FUTURO: '#888' }
+
+function CatalogoAPIs() {
+  const [apis, setApis] = React.useState([])
+  const [favApis, setFavApis] = React.useState([])
+  const [stats, setStats] = React.useState(null)
+  const [loading, setLoading] = React.useState(true)
+  const [filtroBloque, setFiltroBloque] = React.useState('')
+  const [filtroEstado, setFiltroEstado] = React.useState('')
+  const [filtroPrio, setFiltroPrio] = React.useState('')
+  const [filtroFav, setFiltroFav] = React.useState(false)
+  const [buscar, setBuscar] = React.useState('')
+  const [tab, setTab] = React.useState('catalogo')
+  const [testing, setTesting] = React.useState(null)
+  const [enriching, setEnriching] = React.useState(null)
+  const [notaModal, setNotaModal] = React.useState(null)
+  const [notaText, setNotaText] = React.useState('')
+
+  const loadApis = () => {
+    let url = '/api/apis/catalogo?'
+    if (filtroBloque) url += `bloque=${filtroBloque}&`
+    if (filtroEstado) url += `estado=${filtroEstado}&`
+    if (filtroPrio) url += `prioridad=${filtroPrio}&`
+    if (filtroFav) url += `favorito=true&`
+    if (buscar) url += `buscar=${encodeURIComponent(buscar)}&`
+    fetch(API + url).then(r => r.json()).then(d => { setApis(d); setLoading(false) }).catch(() => setLoading(false))
+  }
+  const loadStats = () => { fetch(API + '/api/apis/stats').then(r => r.json()).then(setStats).catch(() => {}) }
+  const loadFavs = () => { fetch(API + '/api/apis/favoritos').then(r => r.json()).then(setFavApis).catch(() => {}) }
+
+  React.useEffect(() => { loadApis(); loadStats() }, [filtroBloque, filtroEstado, filtroPrio, filtroFav, buscar])
+  React.useEffect(() => { if (tab === 'favoritas') loadFavs() }, [tab])
+
+  const testApi = async (id) => {
+    setTesting(id)
+    try { await fetch(API + `/api/apis/test/${id}`, { method: 'POST' }); loadApis(); loadStats() } catch {}
+    setTesting(null)
+  }
+
+  const testAll = async () => {
+    setTesting('all')
+    try { await fetch(API + '/api/apis/test-all', { method: 'POST' }); loadApis(); loadStats() } catch {}
+    setTesting(null)
+  }
+
+  const enrichApi = async (id) => {
+    setEnriching(id)
+    try { const r = await fetch(API + `/api/apis/enrich/${id}`, { method: 'POST' }); if (r.ok) loadApis() } catch {}
+    setEnriching(null)
+  }
+
+  const toggleFav = async (id) => {
+    await fetch(API + '/api/apis/toggle-favorito', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ api_id: id }) })
+    loadApis(); loadStats(); if (tab === 'favoritas') loadFavs()
+  }
+
+  const setApiPrio = async (id, p) => {
+    await fetch(API + '/api/apis/set-prioridad', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ api_id: id, prioridad: p }) })
+    if (tab === 'favoritas') loadFavs(); else loadApis()
+  }
+
+  const saveNota = async () => {
+    if (!notaModal) return
+    await fetch(API + '/api/apis/set-nota', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ api_id: notaModal, nota: notaText }) })
+    setNotaModal(null); loadApis(); if (tab === 'favoritas') loadFavs()
+  }
+
+  return (
+    <div className="apis-page">
+      <div className="apis-header">
+        <div>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:6}}>
+            <Plug size={28} color="#fff" />
+            <h1 style={{fontSize:24,fontWeight:800,color:'#fff',margin:0}}>SIGFAR Hub · Catálogo APIs</h1>
+            <span className="live-badge"><span className="live-dot"></span>{stats ? stats.total : '...'} APIs</span>
+          </div>
+          <p style={{fontSize:13,color:'rgba(255,255,255,.7)',margin:0}}>Roadmap de integraciones — APIs gratuitas de salud y farmacia</p>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:16}}>
+          <div style={{textAlign:'right',color:'#fff'}}>
+            <div style={{fontSize:13,opacity:.7}}>Conectadas</div>
+            <div style={{fontSize:28,fontWeight:800,color:'#4ade80'}}>{stats?.conectadas || 0}</div>
+          </div>
+          <div style={{textAlign:'right',color:'#fff'}}>
+            <div style={{fontSize:13,opacity:.7}}>Pendientes</div>
+            <div style={{fontSize:28,fontWeight:800}}>{stats?.pendientes || 0}</div>
+          </div>
+          <div style={{textAlign:'right',color:'#fff'}}>
+            <div style={{fontSize:13,opacity:.7}}>En APEX</div>
+            <div style={{fontSize:28,fontWeight:800,color:'#93c5fd'}}>{stats?.en_apex || 0}</div>
+          </div>
+          <button className="apis-btn-test-all" onClick={testAll} disabled={testing==='all'}>
+            {testing==='all' ? <><span className="apis-spinner"/> Testeando...</> : <><Zap size={16}/> Probar TODAS</>}
+          </button>
+        </div>
+      </div>
+
+      <div className="radar-tabs">
+        <button className={tab==='catalogo'?'active':''} onClick={()=>setTab('catalogo')}><Plug size={14}/> Catálogo</button>
+        <button className={tab==='favoritas'?'active':''} onClick={()=>setTab('favoritas')}><Star size={14}/> Mis favoritas ({stats?.favoritos||0})</button>
+        <button className={tab==='stats'?'active':''} onClick={()=>setTab('stats')}><BarChart3 size={14}/> Estadísticas</button>
+      </div>
+
+      {tab === 'catalogo' && (
+        <>
+          <div className="radar-filters">
+            <Filter size={16} style={{color:'#64748b',flexShrink:0}} />
+            <select value={filtroBloque} onChange={e=>setFiltroBloque(e.target.value)}>
+              <option value="">Todos los bloques</option>
+              {Object.entries(BLOQUE_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)}>
+              <option value="">Todos los estados</option>
+              <option value="CONECTADA">Conectada</option>
+              <option value="EN_APEX">En APEX</option>
+              <option value="PENDIENTE">Pendiente</option>
+              <option value="FUTURO">Futuro</option>
+            </select>
+            <select value={filtroPrio} onChange={e=>setFiltroPrio(e.target.value)}>
+              <option value="">Todas prioridades</option>
+              <option value="P1">P1</option><option value="P2">P2</option><option value="P3">P3</option>
+            </select>
+            <label className="radar-fav-toggle">
+              <input type="checkbox" checked={filtroFav} onChange={e=>setFiltroFav(e.target.checked)} />
+              <Star size={12}/> Favoritas
+            </label>
+            <div className="radar-search-wrap">
+              <Search size={14} className="radar-search-icon" />
+              <input className="radar-search" type="text" placeholder="Buscar API..." value={buscar} onChange={e=>setBuscar(e.target.value)} />
+            </div>
+          </div>
+
+          {loading ? <p className="apis-loading">Cargando catálogo...</p> : (
+            <div className="apis-grid">
+              {apis.map(a => {
+                const BIcon = BLOQUE_ICONS[a.bloque] || Globe
+                const EIcon = API_ESTADO_ICONS[a.estado] || Clock
+                const eColor = API_ESTADO_COLORS[a.estado] || '#888'
+                return (
+                  <div key={a.id} className="api-card">
+                    <div className="api-card-top">
+                      <div className="api-card-icon" style={{background: eColor + '18', color: eColor}}>
+                        <BIcon size={22} />
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <h3 className="api-card-name">{a.nombre}</h3>
+                        <span className="cat-tag">{BLOQUE_LABELS[a.bloque] || a.bloque}</span>
+                      </div>
+                      <button className="fav-btn" onClick={()=>toggleFav(a.id)}>
+                        <Star size={16} fill={a.favorito ? 'currentColor' : 'none'} color={a.favorito ? '#f59e0b' : '#94a3b8'} />
+                      </button>
+                    </div>
+
+                    <div className="api-card-badges">
+                      <span className="api-estado-badge" style={{color: eColor, borderColor: eColor}}>
+                        <EIcon size={12}/> {a.estado.replace('_',' ')}
+                      </span>
+                      {a.prioridad && <span className={`apis-prio apis-prio-${a.prioridad.toLowerCase()}`}>{a.prioridad}</span>}
+                      {a.ultimo_test_ok !== null && (
+                        <span className={a.ultimo_test_ok ? 'test-ok' : 'test-fail'}>
+                          {a.ultimo_test_ok ? <><CheckCircle2 size={12}/> {a.ultimo_test_latencia_ms}ms</> : <><XCircle size={12}/> FAIL</>}
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="api-card-desc">{a.descripcion}</p>
+
+                    {a.donde_integrada && <div className="api-integrada"><Database size={11}/> {a.donde_integrada}</div>}
+                    {a.limite_gratis && <div className="api-limite"><Info size={11}/> {a.limite_gratis}</div>}
+                    {a.caso_uso && <div className="api-caso-uso">{a.caso_uso}</div>}
+
+                    {a.propuesta_ia && (
+                      <div className="apis-propuesta">
+                        <strong><Brain size={14}/> Propuesta IA:</strong>
+                        <p>{a.propuesta_ia}</p>
+                      </div>
+                    )}
+
+                    <div className="api-card-actions">
+                      <button onClick={()=>testApi(a.id)} disabled={testing===a.id} title="Probar conectividad">
+                        {testing===a.id ? <><span className="apis-spinner"/> Probando...</> : <><Zap size={14}/> Probar</>}
+                      </button>
+                      <button onClick={()=>enrichApi(a.id)} disabled={enriching===a.id} title="Generar propuesta IA">
+                        {enriching===a.id ? <><span className="apis-spinner"/> Generando...</> : <><Brain size={14}/> Propuesta IA</>}
+                      </button>
+                      <button onClick={()=>{setNotaModal(a.id);setNotaText(a.nota_usuario||'')}} title="Nota">
+                        <StickyNote size={14}/>
+                      </button>
+                      {a.url_docs && <a href={a.url_docs} target="_blank" rel="noreferrer" className="api-docs-link"><ExternalLink size={12}/> Docs</a>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'favoritas' && (
+        <div className="apis-favs-section">
+          <h3 style={{fontSize:18,fontWeight:700,marginBottom:16}}><Star size={18} color="#f59e0b"/> Mis APIs favoritas — Backlog de integraciones ({favApis.length})</h3>
+          {favApis.length === 0 ? <p style={{color:'#64748b'}}>No hay APIs favoritas. Marca APIs con <Star size={12}/> para organizar tu backlog aquí.</p> : (
+            <div className="apis-grid">
+              {favApis.map(a => {
+                const BIcon = BLOQUE_ICONS[a.bloque] || Globe
+                const EIcon = API_ESTADO_ICONS[a.estado] || Clock
+                const eColor = API_ESTADO_COLORS[a.estado] || '#888'
+                const PrioIcon = a.prioridad_usuario === 'ALTA' ? AlertTriangle : a.prioridad_usuario === 'MEDIA' ? AlertCircle : Info
+                return (
+                  <div key={a.id} className="api-card">
+                    <div className="api-card-top">
+                      <div className="api-card-icon" style={{background: eColor + '18', color: eColor}}>
+                        <BIcon size={22} />
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <h3 className="api-card-name">{a.nombre}</h3>
+                        <span className="cat-tag">{BLOQUE_LABELS[a.bloque]}</span>
+                      </div>
+                      <button className="fav-btn" onClick={()=>toggleFav(a.id)}>
+                        <Star size={16} fill="currentColor" color="#f59e0b" />
+                      </button>
+                    </div>
+                    <div className="api-card-badges">
+                      <span className="api-estado-badge" style={{color: eColor, borderColor: eColor}}><EIcon size={12}/> {a.estado.replace('_',' ')}</span>
+                      {a.prioridad && <span className={`apis-prio apis-prio-${a.prioridad.toLowerCase()}`}>{a.prioridad}</span>}
+                      <select value={a.prioridad_usuario||''} onChange={e=>setApiPrio(a.id,e.target.value)} className="radar-prio-select">
+                        <option value="">Mi prioridad...</option>
+                        <option value="ALTA">Alta</option>
+                        <option value="MEDIA">Media</option>
+                        <option value="BAJA">Baja</option>
+                      </select>
+                      {a.ultimo_test_ok !== null && (
+                        <span className={a.ultimo_test_ok ? 'test-ok' : 'test-fail'}>
+                          {a.ultimo_test_ok ? <><CheckCircle2 size={12}/> {a.ultimo_test_latencia_ms}ms</> : <><XCircle size={12}/> FAIL</>}
+                        </span>
+                      )}
+                    </div>
+                    <p className="api-card-desc">{a.descripcion}</p>
+                    {a.prioridad_usuario && <span className={`prio-badge prio-${a.prioridad_usuario.toLowerCase()}`}><PrioIcon size={12}/> {a.prioridad_usuario}</span>}
+                    {a.nota_usuario && <div className="radar-nota-preview"><StickyNote size={12}/> {a.nota_usuario}</div>}
+                    <div className="api-card-actions">
+                      <button onClick={()=>testApi(a.id)} disabled={testing===a.id}><Zap size={14}/> Probar</button>
+                      <button onClick={()=>{setNotaModal(a.id);setNotaText(a.nota_usuario||'')}}><StickyNote size={14}/> Nota</button>
+                      {a.url_docs && <a href={a.url_docs} target="_blank" rel="noreferrer" className="api-docs-link"><ExternalLink size={12}/> Docs</a>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'stats' && stats && (
+        <div className="radar-stats-section">
+          <div className="apis-stats-cards">
+            <div className="apis-stat-card"><span className="apis-stat-num">{stats.total}</span><span>Total APIs</span></div>
+            <div className="apis-stat-card conectada"><span className="apis-stat-num">{stats.conectadas}</span><span>Conectadas</span></div>
+            <div className="apis-stat-card apex"><span className="apis-stat-num">{stats.en_apex}</span><span>En APEX</span></div>
+            <div className="apis-stat-card pendiente"><span className="apis-stat-num">{stats.pendientes}</span><span>Pendientes</span></div>
+            <div className="apis-stat-card futuro"><span className="apis-stat-num">{stats.futuro}</span><span>Futuro</span></div>
+            <div className="apis-stat-card"><span className="apis-stat-num">{stats.test_ok}</span><span>Test OK</span></div>
+          </div>
+
+          <h3 style={{fontSize:16,fontWeight:700,margin:'24px 0 12px'}}><BarChart3 size={16}/> Por bloque</h3>
+          <div className="radar-bars">
+            {stats.por_bloque && Object.entries(stats.por_bloque).map(([k,v]) => {
+              const pct = stats.total ? Math.round(v/stats.total*100) : 0
+              const BIcon = BLOQUE_ICONS[k] || Globe
+              return (
+                <div key={k} className="radar-bar-row">
+                  <span className="radar-bar-label"><BIcon size={12}/> {BLOQUE_LABELS[k] || k}</span>
+                  <div className="radar-bar-track"><div className="radar-bar-fill" style={{width: pct+'%'}}/></div>
+                  <span className="radar-bar-val">{v}</span>
+                </div>
+              )
+            })}
+          </div>
+
+          <h3 style={{fontSize:16,fontWeight:700,margin:'24px 0 12px'}}>Por prioridad</h3>
+          <div className="radar-bars">
+            {stats.por_prioridad && Object.entries(stats.por_prioridad).map(([k,v]) => {
+              const pct = stats.total ? Math.round(v/stats.total*100) : 0
+              const colors = { P1: '#ef4444', P2: '#f59e0b', P3: '#22c55e' }
+              return (
+                <div key={k} className="radar-bar-row">
+                  <span className="radar-bar-label">{k}</span>
+                  <div className="radar-bar-track"><div className="radar-bar-fill" style={{width: pct+'%', background: colors[k]}}/></div>
+                  <span className="radar-bar-val">{v}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {notaModal && (
+        <div className="radar-modal-overlay" onClick={()=>setNotaModal(null)}>
+          <div className="radar-modal" onClick={e=>e.stopPropagation()}>
+            <h4><StickyNote size={16}/> Nota</h4>
+            <textarea value={notaText} onChange={e=>setNotaText(e.target.value)} rows={4} placeholder="Escribe tu nota aquí..." />
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:12}}>
+              <button className="radar-modal-cancel" onClick={()=>setNotaModal(null)}>Cancelar</button>
+              <button className="radar-modal-save" onClick={saveNota}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ═══ Algoritmos ML — Lookup maps ═══ */
+const ML_CAT_LABELS = {
+  VALIDACION: 'Validación', FARMACOCINETICA: 'Farmacocinética', NUTRICION: 'Nutrición',
+  PROA: 'PROA', ELABORACION: 'Elaboración', STOCK_LOGISTICA: 'Stock/Logística',
+  ROBOTICA: 'Robótica', FARMACOECONOMIA: 'Farmacoeconomía', CUADRO_MANDOS: 'Cuadro Mandos',
+  REGULACION: 'Regulación'
+}
+const ML_CAT_ICONS = {
+  VALIDACION: ShieldAlert, FARMACOCINETICA: FlaskConical, NUTRICION: Heart,
+  PROA: Shield, ELABORACION: Layers, STOCK_LOGISTICA: Database,
+  ROBOTICA: Cpu, FARMACOECONOMIA: Wallet, CUADRO_MANDOS: BarChart3,
+  REGULACION: FileText
+}
+const ML_CAT_COLORS = {
+  VALIDACION: '#ef4444', FARMACOCINETICA: '#8b5cf6', NUTRICION: '#22c55e',
+  PROA: '#f59e0b', ELABORACION: '#06b6d4', STOCK_LOGISTICA: '#3b82f6',
+  ROBOTICA: '#ec4899', FARMACOECONOMIA: '#14b8a6', CUADRO_MANDOS: '#6366f1',
+  REGULACION: '#64748b'
+}
+const ML_TIPO_LABELS = {
+  SUPERVISADO: 'Supervisado', NO_SUPERVISADO: 'No supervisado', DEEP_LEARNING: 'Deep Learning',
+  NLP: 'NLP', BAYESIANO: 'Bayesiano', SERIES_TEMPORALES: 'Series temporales',
+  REFUERZO: 'Refuerzo'
+}
+const ML_TIPO_COLORS = {
+  SUPERVISADO: '#3b82f6', NO_SUPERVISADO: '#8b5cf6', DEEP_LEARNING: '#ec4899',
+  NLP: '#06b6d4', BAYESIANO: '#f59e0b', SERIES_TEMPORALES: '#22c55e',
+  REFUERZO: '#ef4444'
+}
+const ML_COMP_COLORS = { BAJA: '#22c55e', MEDIA: '#f59e0b', ALTA: '#ef4444', MUY_ALTA: '#dc2626' }
+const ML_ESTADO_ICONS = { IMPLEMENTADO: CheckCircle2, EN_DESARROLLO: RefreshCw, NO_IMPLEMENTADO: Clock }
+const ML_ESTADO_COLORS = { IMPLEMENTADO: '#16a34a', EN_DESARROLLO: '#f59e0b', NO_IMPLEMENTADO: '#94a3b8' }
+
+/* ═══ AlgoritmosML ═══ */
+function AlgoritmosML() {
+  const [algos, setAlgos] = React.useState([])
+  const [favs, setFavs] = React.useState([])
+  const [stats, setStats] = React.useState(null)
+  const [loading, setLoading] = React.useState(true)
+  const [filtroCat, setFiltroCat] = React.useState('')
+  const [filtroTipo, setFiltroTipo] = React.useState('')
+  const [filtroEstado, setFiltroEstado] = React.useState('')
+  const [filtroComp, setFiltroComp] = React.useState('')
+  const [buscar, setBuscar] = React.useState('')
+  const [tab, setTab] = React.useState('catalogo')
+  const [enriching, setEnriching] = React.useState(null)
+  const [notaModal, setNotaModal] = React.useState(null)
+  const [notaText, setNotaText] = React.useState('')
+
+  const loadAlgos = () => {
+    let url = '/api/ml/algoritmos?'
+    if (filtroCat) url += `categoria=${filtroCat}&`
+    if (filtroTipo) url += `tipo=${filtroTipo}&`
+    if (filtroEstado) url += `estado=${filtroEstado}&`
+    if (filtroComp) url += `complejidad=${filtroComp}&`
+    if (buscar) url += `q=${encodeURIComponent(buscar)}&`
+    fetch(API + url).then(r => r.json()).then(d => { setAlgos(d); setLoading(false) }).catch(() => setLoading(false))
+  }
+  const loadStats = () => { fetch(API + '/api/ml/stats').then(r => r.json()).then(setStats).catch(() => {}) }
+  const loadFavs = () => { fetch(API + '/api/ml/favoritos').then(r => r.json()).then(setFavs).catch(() => {}) }
+
+  React.useEffect(() => { loadAlgos(); loadStats() }, [filtroCat, filtroTipo, filtroEstado, filtroComp, buscar])
+  React.useEffect(() => { if (tab === 'favoritos') loadFavs() }, [tab])
+
+  const enrichAlgo = async (id) => {
+    setEnriching(id)
+    try { const r = await fetch(API + `/api/ml/enrich/${id}`, { method: 'POST' }); if (r.ok) loadAlgos() } catch {}
+    setEnriching(null)
+  }
+
+  const toggleFav = async (id) => {
+    await fetch(API + '/api/ml/toggle-favorito', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ algoritmo_id: id }) })
+    loadAlgos(); loadStats(); if (tab === 'favoritos') loadFavs()
+  }
+
+  const setAlgoPrio = async (id, p) => {
+    await fetch(API + '/api/ml/set-prioridad', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ algoritmo_id: id, prioridad: p }) })
+    if (tab === 'favoritos') loadFavs(); else loadAlgos()
+  }
+
+  const saveNota = async () => {
+    if (!notaModal) return
+    await fetch(API + '/api/ml/set-nota', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ algoritmo_id: notaModal, nota: notaText }) })
+    setNotaModal(null); loadAlgos(); if (tab === 'favoritos') loadFavs()
+  }
+
+  const renderCard = (a, showPrio = false) => {
+    const CIcon = ML_CAT_ICONS[a.categoria_farmacia] || Brain
+    const catColor = ML_CAT_COLORS[a.categoria_farmacia] || '#888'
+    const EIcon = ML_ESTADO_ICONS[a.estado_sigfar_hub] || Clock
+    const eColor = ML_ESTADO_COLORS[a.estado_sigfar_hub] || '#888'
+    const compColor = ML_COMP_COLORS[a.complejidad] || '#888'
+    const tipoColor = ML_TIPO_COLORS[a.tipo_ml] || '#888'
+    return (
+      <div key={a.id} className="ml-card">
+        <div className="api-card-top">
+          <div className="api-card-icon" style={{background: catColor + '18', color: catColor}}>
+            <CIcon size={22} />
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <h3 className="api-card-name">{a.nombre}</h3>
+            <span className="cat-tag" style={{borderColor: catColor, color: catColor}}>{ML_CAT_LABELS[a.categoria_farmacia] || a.categoria_farmacia}</span>
+          </div>
+          <button className="fav-btn" onClick={()=>toggleFav(a.id)}>
+            <Star size={16} fill={a.favorito ? 'currentColor' : 'none'} color={a.favorito ? '#f59e0b' : '#94a3b8'} />
+          </button>
+        </div>
+
+        <div className="api-card-badges">
+          <span className="api-estado-badge" style={{color: eColor, borderColor: eColor}}>
+            <EIcon size={12}/> {a.estado_sigfar_hub.replace(/_/g,' ')}
+          </span>
+          <span className="ml-tipo-badge" style={{color: tipoColor, borderColor: tipoColor}}>
+            <BrainCircuit size={12}/> {ML_TIPO_LABELS[a.tipo_ml] || a.tipo_ml}
+          </span>
+          <span className="ml-comp-badge" style={{color: compColor, borderColor: compColor}}>
+            <Gauge size={12}/> {a.complejidad.replace('_',' ')}
+          </span>
+        </div>
+
+        <p className="api-card-desc">{a.descripcion}</p>
+
+        {a.caso_uso && <div className="ml-caso-uso"><Target size={11}/> {a.caso_uso}</div>}
+        {a.librerias_python && <div className="ml-librerias"><Cpu size={11}/> {a.librerias_python}</div>}
+        {a.modulo_sigfar && <div className="ml-modulo"><GitBranch size={11}/> Módulo: {a.modulo_sigfar}</div>}
+
+        {a.propuesta_ia && (
+          <div className="apis-propuesta">
+            <strong><Brain size={14}/> Propuesta IA:</strong>
+            <p>{a.propuesta_ia}</p>
+          </div>
+        )}
+
+        {showPrio && (
+          <div className="ml-fav-prio">
+            <select value={a.prioridad_usuario||''} onChange={e=>setAlgoPrio(a.id,e.target.value)} className="radar-prio-select">
+              <option value="">Mi prioridad...</option>
+              <option value="ALTA">Alta</option>
+              <option value="MEDIA">Media</option>
+              <option value="BAJA">Baja</option>
+            </select>
+            {a.prioridad_usuario && (
+              <span className={`prio-badge prio-${a.prioridad_usuario.toLowerCase()}`}>
+                {a.prioridad_usuario === 'ALTA' ? <AlertTriangle size={12}/> : a.prioridad_usuario === 'MEDIA' ? <AlertCircle size={12}/> : <Info size={12}/>} {a.prioridad_usuario}
+              </span>
+            )}
+          </div>
+        )}
+        {showPrio && a.nota_usuario && <div className="radar-nota-preview"><StickyNote size={12}/> {a.nota_usuario}</div>}
+
+        <div className="api-card-actions">
+          <button onClick={()=>enrichAlgo(a.id)} disabled={enriching===a.id} title="Generar propuesta IA">
+            {enriching===a.id ? <><span className="apis-spinner"/> Generando...</> : <><Brain size={14}/> Propuesta IA</>}
+          </button>
+          <button onClick={()=>{setNotaModal(a.id);setNotaText(a.nota_usuario||'')}} title="Nota">
+            <StickyNote size={14}/>
+          </button>
+          {a.paper_referencia && <a href={a.paper_referencia} target="_blank" rel="noreferrer" className="api-docs-link"><ExternalLink size={12}/> Paper</a>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="ml-page">
+      <div className="ml-header">
+        <div>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:6}}>
+            <BrainCircuit size={28} color="#fff" />
+            <h1 style={{fontSize:24,fontWeight:800,color:'#fff',margin:0}}>SIGFAR Hub · Algoritmos ML</h1>
+            <span className="live-badge"><span className="live-dot"></span>{stats ? stats.total : '...'} Algoritmos</span>
+          </div>
+          <p style={{fontSize:13,color:'rgba(255,255,255,.7)',margin:0}}>Catálogo de algoritmos de Machine Learning para farmacia hospitalaria</p>
+        </div>
+        <div style={{display:'flex',alignItems:'center',gap:16}}>
+          <div style={{textAlign:'right',color:'#fff'}}>
+            <div style={{fontSize:13,opacity:.7}}>Implementados</div>
+            <div style={{fontSize:28,fontWeight:800,color:'#4ade80'}}>{stats?.implementados || 0}</div>
+          </div>
+          <div style={{textAlign:'right',color:'#fff'}}>
+            <div style={{fontSize:13,opacity:.7}}>Categorías</div>
+            <div style={{fontSize:28,fontWeight:800}}>{stats?.categorias || 0}</div>
+          </div>
+          <div style={{textAlign:'right',color:'#fff'}}>
+            <div style={{fontSize:13,opacity:.7}}>Tipos ML</div>
+            <div style={{fontSize:28,fontWeight:800,color:'#93c5fd'}}>{stats?.tipos_ml || 0}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="radar-tabs">
+        <button className={tab==='catalogo'?'active':''} onClick={()=>setTab('catalogo')}><BrainCircuit size={14}/> Catálogo</button>
+        <button className={tab==='favoritos'?'active':''} onClick={()=>setTab('favoritos')}><Star size={14}/> Mis favoritos ({stats?.favoritos||0})</button>
+        <button className={tab==='stats'?'active':''} onClick={()=>setTab('stats')}><BarChart3 size={14}/> Estadísticas</button>
+        <button className={tab==='mapa'?'active':''} onClick={()=>setTab('mapa')}><Layers size={14}/> Mapa implementación</button>
+      </div>
+
+      {tab === 'catalogo' && (
+        <>
+          <div className="radar-filters">
+            <Filter size={16} style={{color:'#64748b',flexShrink:0}} />
+            <select value={filtroCat} onChange={e=>setFiltroCat(e.target.value)}>
+              <option value="">Todas las categorías</option>
+              {Object.entries(ML_CAT_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <select value={filtroTipo} onChange={e=>setFiltroTipo(e.target.value)}>
+              <option value="">Todos los tipos</option>
+              {Object.entries(ML_TIPO_LABELS).map(([k,v]) => <option key={k} value={k}>{v}</option>)}
+            </select>
+            <select value={filtroEstado} onChange={e=>setFiltroEstado(e.target.value)}>
+              <option value="">Todos los estados</option>
+              <option value="IMPLEMENTADO">Implementado</option>
+              <option value="EN_DESARROLLO">En desarrollo</option>
+              <option value="NO_IMPLEMENTADO">No implementado</option>
+            </select>
+            <select value={filtroComp} onChange={e=>setFiltroComp(e.target.value)}>
+              <option value="">Toda complejidad</option>
+              <option value="BAJA">Baja</option>
+              <option value="MEDIA">Media</option>
+              <option value="ALTA">Alta</option>
+              <option value="MUY_ALTA">Muy alta</option>
+            </select>
+            <div className="radar-search-wrap">
+              <Search size={14} className="radar-search-icon" />
+              <input className="radar-search" type="text" placeholder="Buscar algoritmo..." value={buscar} onChange={e=>setBuscar(e.target.value)} />
+            </div>
+          </div>
+
+          {loading ? <p className="apis-loading">Cargando catálogo...</p> : (
+            <div className="ml-grid">
+              {algos.map(a => renderCard(a))}
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === 'favoritos' && (
+        <div className="apis-favs-section">
+          <h3 style={{fontSize:18,fontWeight:700,marginBottom:16}}><Star size={18} color="#f59e0b"/> Mis algoritmos favoritos — Roadmap de implementación ({favs.length})</h3>
+          {favs.length === 0 ? <p style={{color:'#64748b'}}>No hay algoritmos favoritos. Marca algoritmos con <Star size={12}/> para organizar tu roadmap aquí.</p> : (
+            <div className="ml-grid">
+              {favs.map(a => renderCard(a, true))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'stats' && stats && (
+        <div className="radar-stats-section">
+          <div className="apis-stats-cards">
+            <div className="apis-stat-card"><span className="apis-stat-num">{stats.total}</span><span>Total</span></div>
+            <div className="apis-stat-card conectada"><span className="apis-stat-num">{stats.implementados}</span><span>Implementados</span></div>
+            <div className="apis-stat-card pendiente"><span className="apis-stat-num">{stats.no_implementados}</span><span>No implementados</span></div>
+            <div className="apis-stat-card"><span className="apis-stat-num">{stats.favoritos}</span><span>Favoritos</span></div>
+          </div>
+
+          <h3 style={{fontSize:16,fontWeight:700,margin:'24px 0 12px'}}><BarChart3 size={16}/> Por categoría farmacéutica</h3>
+          <div className="radar-bars">
+            {stats.por_categoria && stats.por_categoria.map(c => {
+              const pct = stats.total ? Math.round(c.n/stats.total*100) : 0
+              const CIcon = ML_CAT_ICONS[c.categoria_farmacia] || Brain
+              const color = ML_CAT_COLORS[c.categoria_farmacia] || '#888'
+              return (
+                <div key={c.categoria_farmacia} className="radar-bar-row">
+                  <span className="radar-bar-label"><CIcon size={12}/> {ML_CAT_LABELS[c.categoria_farmacia] || c.categoria_farmacia}</span>
+                  <div className="radar-bar-track"><div className="radar-bar-fill" style={{width: pct+'%', background: color}}/></div>
+                  <span className="radar-bar-val">{c.n}</span>
+                </div>
+              )
+            })}
+          </div>
+
+          <h3 style={{fontSize:16,fontWeight:700,margin:'24px 0 12px'}}><BrainCircuit size={16}/> Por tipo de ML</h3>
+          <div className="radar-bars">
+            {stats.por_tipo && stats.por_tipo.map(t => {
+              const pct = stats.total ? Math.round(t.n/stats.total*100) : 0
+              const color = ML_TIPO_COLORS[t.tipo_ml] || '#888'
+              return (
+                <div key={t.tipo_ml} className="radar-bar-row">
+                  <span className="radar-bar-label">{ML_TIPO_LABELS[t.tipo_ml] || t.tipo_ml}</span>
+                  <div className="radar-bar-track"><div className="radar-bar-fill" style={{width: pct+'%', background: color}}/></div>
+                  <span className="radar-bar-val">{t.n}</span>
+                </div>
+              )
+            })}
+          </div>
+
+          <h3 style={{fontSize:16,fontWeight:700,margin:'24px 0 12px'}}><Gauge size={16}/> Por complejidad</h3>
+          <div className="radar-bars">
+            {stats.por_complejidad && stats.por_complejidad.map(c => {
+              const pct = stats.total ? Math.round(c.n/stats.total*100) : 0
+              const color = ML_COMP_COLORS[c.complejidad] || '#888'
+              return (
+                <div key={c.complejidad} className="radar-bar-row">
+                  <span className="radar-bar-label">{c.complejidad.replace('_',' ')}</span>
+                  <div className="radar-bar-track"><div className="radar-bar-fill" style={{width: pct+'%', background: color}}/></div>
+                  <span className="radar-bar-val">{c.n}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {tab === 'mapa' && (
+        <div className="ml-mapa-section">
+          <h3 style={{fontSize:18,fontWeight:700,marginBottom:16}}><Layers size={18}/> Mapa de implementación por categoría</h3>
+          {Object.entries(ML_CAT_LABELS).map(([cat, label]) => {
+            const catAlgos = algos.filter(a => a.categoria_farmacia === cat)
+            if (catAlgos.length === 0) return null
+            const CIcon = ML_CAT_ICONS[cat] || Brain
+            const color = ML_CAT_COLORS[cat] || '#888'
+            const impl = catAlgos.filter(a => a.estado_sigfar_hub === 'IMPLEMENTADO').length
+            return (
+              <div key={cat} className="ml-mapa-cat">
+                <div className="ml-mapa-cat-header" style={{borderLeftColor: color}}>
+                  <CIcon size={18} color={color}/>
+                  <span style={{fontWeight:700}}>{label}</span>
+                  <span style={{fontSize:12,color:'#64748b'}}>({impl}/{catAlgos.length} implementados)</span>
+                </div>
+                <div className="ml-mapa-algos">
+                  {catAlgos.map(a => {
+                    const eColor = ML_ESTADO_COLORS[a.estado_sigfar_hub] || '#888'
+                    const compColor = ML_COMP_COLORS[a.complejidad] || '#888'
+                    return (
+                      <div key={a.id} className="ml-mapa-algo" style={{borderLeftColor: eColor}}>
+                        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                          <span style={{fontWeight:600,fontSize:13}}>{a.nombre}</span>
+                          <span className="ml-comp-badge" style={{color: compColor, borderColor: compColor, fontSize:10, padding:'1px 6px'}}>
+                            {a.complejidad.replace('_',' ')}
+                          </span>
+                        </div>
+                        <div style={{fontSize:12,color:'#64748b'}}>{a.nombre_tecnico} — {ML_TIPO_LABELS[a.tipo_ml]}</div>
+                        {a.estado_sigfar_hub === 'IMPLEMENTADO' && <span style={{fontSize:11,color:'#16a34a',fontWeight:600}}><CheckCircle2 size={11}/> Implementado</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {notaModal && (
+        <div className="radar-modal-overlay" onClick={()=>setNotaModal(null)}>
+          <div className="radar-modal" onClick={e=>e.stopPropagation()}>
+            <h4><StickyNote size={16}/> Nota</h4>
+            <textarea value={notaText} onChange={e=>setNotaText(e.target.value)} rows={4} placeholder="Escribe tu nota aquí..." />
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:12}}>
+              <button className="radar-modal-cancel" onClick={()=>setNotaModal(null)}>Cancelar</button>
+              <button className="radar-modal-save" onClick={saveNota}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ═══ App ═══ */
 function App() {
   return (
@@ -1065,6 +2076,9 @@ function App() {
           <Route path="/emprm" element={<EmprmPendientes />} />
           <Route path="/integraciones" element={<Integraciones />} />
           <Route path="/jefatura" element={<Jefatura />} />
+          <Route path="/radar" element={<RadarIA />} />
+          <Route path="/apis" element={<CatalogoAPIs />} />
+          <Route path="/ml" element={<AlgoritmosML />} />
         </Routes>
       </main>
     </BrowserRouter>
