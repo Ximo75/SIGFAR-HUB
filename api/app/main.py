@@ -2055,10 +2055,9 @@ async def propuestas_set_prioridad(body: PropuestaSetPrioridad):
 
 async def _stack_test_component(client: httpx.AsyncClient, comp: dict) -> dict:
     """Prueba conectividad real de un componente del stack."""
-    url = comp.get("url_health") or comp.get("url_base")
+    url = comp.get("url") or comp.get("url_docs")
     if not url:
         return {"ok": None, "latencia_ms": 0, "error": "Sin URL de test"}
-    # Solo testear URLs http/https
     if not url.startswith("http"):
         return {"ok": None, "latencia_ms": 0, "error": "URL no testeable"}
     try:
@@ -2078,29 +2077,24 @@ async def stack_stats():
     async with async_session() as session:
         total = (await session.execute(
             text("SELECT COUNT(*) FROM hgu_stack_components"))).scalar()
-        operativos = (await session.execute(
-            text("SELECT COUNT(*) FROM hgu_stack_components WHERE estado = 'OPERATIVO'"))).scalar()
-        degradados = (await session.execute(
-            text("SELECT COUNT(*) FROM hgu_stack_components WHERE estado = 'DEGRADADO'"))).scalar()
-        caidos = (await session.execute(
-            text("SELECT COUNT(*) FROM hgu_stack_components WHERE estado = 'CAIDO'"))).scalar()
+        conectados = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_stack_components WHERE estado = 'CONECTADO'"))).scalar()
         pendientes = (await session.execute(
             text("SELECT COUNT(*) FROM hgu_stack_components WHERE estado = 'PENDIENTE'"))).scalar()
+        futuros = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_stack_components WHERE estado = 'FUTURO'"))).scalar()
+        errores = (await session.execute(
+            text("SELECT COUNT(*) FROM hgu_stack_components WHERE estado = 'ERROR'"))).scalar()
         por_grupo = await session.execute(
             text("SELECT grupo, COUNT(*) n FROM hgu_stack_components GROUP BY grupo ORDER BY grupo"))
         grupos = {r["grupo"]: r["n"] for r in por_grupo.mappings().all()}
         por_tipo = await session.execute(
             text("SELECT tipo, COUNT(*) n FROM hgu_stack_components GROUP BY tipo ORDER BY n DESC"))
         tipos = {r["tipo"]: r["n"] for r in por_tipo.mappings().all()}
-        test_ok = (await session.execute(
-            text("SELECT COUNT(*) FROM hgu_stack_components WHERE ultimo_check_ok = TRUE"))).scalar()
-        test_fail = (await session.execute(
-            text("SELECT COUNT(*) FROM hgu_stack_components WHERE ultimo_check_ok = FALSE"))).scalar()
         return {
-            "total": total, "operativos": operativos, "degradados": degradados,
-            "caidos": caidos, "pendientes": pendientes,
-            "por_grupo": grupos, "por_tipo": tipos,
-            "test_ok": test_ok, "test_fail": test_fail
+            "total": total, "conectados": conectados, "pendientes": pendientes,
+            "futuros": futuros, "errores": errores,
+            "por_grupo": grupos, "por_tipo": tipos
         }
 
 
@@ -2108,7 +2102,7 @@ async def stack_stats():
 async def stack_components(grupo: str | None = None, estado: str | None = None,
                            tipo: str | None = None):
     """Lista todos los componentes del stack con filtros opcionales"""
-    conds = ["visible = TRUE"]
+    conds = []
     params = {}
     if grupo:
         conds.append("grupo = :grupo")
@@ -2119,11 +2113,21 @@ async def stack_components(grupo: str | None = None, estado: str | None = None,
     if tipo:
         conds.append("tipo = :tipo")
         params["tipo"] = tipo
-    where = "WHERE " + " AND ".join(conds)
-    sql = f"SELECT * FROM hgu_stack_components {where} ORDER BY orden_visual, nombre"
+    where = "WHERE " + " AND ".join(conds) if conds else ""
+    sql = f"SELECT * FROM hgu_stack_components {where} ORDER BY posicion_diagrama, grupo, orden, nombre"
     async with async_session() as session:
         result = await session.execute(text(sql), params)
-        return [dict(r) for r in result.mappings().all()]
+        rows = result.mappings().all()
+        out = []
+        for r in rows:
+            d = dict(r)
+            if d.get("detalles") and isinstance(d["detalles"], str):
+                try:
+                    d["detalles"] = json.loads(d["detalles"])
+                except Exception:
+                    pass
+            out.append(d)
+        return out
 
 
 @app.get("/api/stack/components/{comp_id}", tags=["Stack"])
@@ -2135,7 +2139,13 @@ async def stack_component_detail(comp_id: int):
         row = result.mappings().first()
         if not row:
             raise HTTPException(404, "Componente no encontrado")
-        return dict(row)
+        d = dict(row)
+        if d.get("detalles") and isinstance(d["detalles"], str):
+            try:
+                d["detalles"] = json.loads(d["detalles"])
+            except Exception:
+                pass
+        return d
 
 
 @app.post("/api/stack/test/{comp_id}", tags=["Stack"])
@@ -2152,19 +2162,13 @@ async def stack_test_component(comp_id: int):
     async with httpx.AsyncClient() as client:
         test_result = await _stack_test_component(client, comp_data)
 
-    # Actualizar solo si el test devolvió un resultado real
+    # Actualizar estado si el test devolvió un resultado real
     if test_result["ok"] is not None:
-        new_estado = "OPERATIVO" if test_result["ok"] else "DEGRADADO"
+        new_estado = "CONECTADO" if test_result["ok"] else "ERROR"
         async with async_session() as session:
             await session.execute(text("""
-                UPDATE hgu_stack_components
-                SET ultimo_check = NOW(),
-                    ultimo_check_ok = :ok,
-                    latencia_ms = :lat,
-                    estado = :estado
-                WHERE id = :id
-            """), {"ok": test_result["ok"], "lat": test_result["latencia_ms"],
-                   "estado": new_estado, "id": comp_id})
+                UPDATE hgu_stack_components SET estado = :estado WHERE id = :id
+            """), {"estado": new_estado, "id": comp_id})
             await session.commit()
 
     return {
@@ -2175,10 +2179,10 @@ async def stack_test_component(comp_id: int):
 
 @app.post("/api/stack/test-all", tags=["Stack"])
 async def stack_test_all():
-    """Testear conectividad de TODOS los componentes con URL testeable"""
+    """Testear conectividad de TODOS los componentes con URL"""
     async with async_session() as session:
         result = await session.execute(
-            text("SELECT * FROM hgu_stack_components WHERE visible = TRUE ORDER BY orden_visual"))
+            text("SELECT * FROM hgu_stack_components ORDER BY grupo, orden"))
         components = [dict(r) for r in result.mappings().all()]
 
     results = []
@@ -2186,21 +2190,15 @@ async def stack_test_all():
         for comp in components:
             test_result = await _stack_test_component(client, comp)
             if test_result["ok"] is not None:
-                new_estado = "OPERATIVO" if test_result["ok"] else "DEGRADADO"
+                new_estado = "CONECTADO" if test_result["ok"] else "ERROR"
                 async with async_session() as session:
-                    await session.execute(text("""
-                        UPDATE hgu_stack_components
-                        SET ultimo_check = NOW(),
-                            ultimo_check_ok = :ok,
-                            latencia_ms = :lat,
-                            estado = :estado
-                        WHERE id = :id
-                    """), {"ok": test_result["ok"], "lat": test_result["latencia_ms"],
-                           "estado": new_estado, "id": comp["id"]})
+                    await session.execute(text(
+                        "UPDATE hgu_stack_components SET estado = :estado WHERE id = :id"
+                    ), {"estado": new_estado, "id": comp["id"]})
                     await session.commit()
             results.append({
                 "comp_id": comp["id"], "nombre": comp["nombre"],
-                "grupo": comp["grupo"],
+                "grupo": comp["grupo"], "tipo": comp["tipo"],
                 **test_result
             })
             await asyncio.sleep(0.3)
@@ -2213,5 +2211,501 @@ async def stack_test_all():
         "fail": fail_count, "sin_url": skip_count,
         "results": results
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+#  MÓDULO F — Evidencia SIGFAR
+#  Benchmarking científico, Panel Futuro vs Realidad, Papers
+# ═══════════════════════════════════════════════════════════════
+
+SIGFAR_CONTEXT_PROMPT = """SIGFAR es una plataforma de IA para farmacia hospitalaria del Hospital General Universitario de Valencia que incluye:
+- P15: Dashboard seguimiento pacientes con pipeline multiagente EM/PRM (6 categorías PCNE v9.1)
+- P36: Nutrición Artificial con 7 agentes IA (screening, requerimientos, fórmulas, cobertura, balance hídrico, analítica, plan)
+- P37: Nutrición Parenteral Domiciliaria con IA
+- P40: Dashboard multiagente con scoring complejidad (14 dimensiones, 53 puntos, 4 niveles)
+- P42: Farmacocinética clínica con estimación MAP Bayesiana (vancomicina, gentamicina, amikacina)
+- P43: PROA antimicrobianos con 6 agentes IA (evaluación, cultivos, desescalada, duración, profilaxis, educación)
+- Hub: Radar inteligencia competitiva, catálogo APIs/ML, propuestas estratégicas con IA, cuadro mandos dirección con Sigfarita (asistente IA jefatura)
+- Integraciones: ClinicalTrials.gov, PubMed, CIMA/AEMPS, Groq/Llama 3.3 70B"""
+
+
+# ─── GET /api/evidencia/benchmarks ─────────────────────────────
+@app.get("/api/evidencia/benchmarks", tags=["Evidencia"])
+async def evidencia_benchmarks():
+    async with async_session() as session:
+        rows = await session.execute(text("""
+            SELECT b.*,
+                   (SELECT count(*) FROM hgu_evidencia_comparativas WHERE benchmark_id = b.id) as num_comparativas
+            FROM hgu_evidencia_benchmarks b
+            ORDER BY b.fecha_analisis DESC
+        """))
+        items = [dict(r._mapping) for r in rows]
+        for it in items:
+            if it.get("fecha_analisis"):
+                it["fecha_analisis"] = str(it["fecha_analisis"])
+            if it.get("json_analisis") and isinstance(it["json_analisis"], str):
+                it["json_analisis"] = json.loads(it["json_analisis"])
+        return items
+
+
+# ─── GET /api/evidencia/benchmarks/{id} ────────────────────────
+@app.get("/api/evidencia/benchmarks/{bench_id}", tags=["Evidencia"])
+async def evidencia_benchmark_detail(bench_id: int):
+    async with async_session() as session:
+        row = await session.execute(text(
+            "SELECT * FROM hgu_evidencia_benchmarks WHERE id = :id"
+        ), {"id": bench_id})
+        bench = row.mappings().first()
+        if not bench:
+            raise HTTPException(404, "Benchmark no encontrado")
+        bench = dict(bench)
+        if bench.get("fecha_analisis"):
+            bench["fecha_analisis"] = str(bench["fecha_analisis"])
+        if bench.get("json_analisis") and isinstance(bench["json_analisis"], str):
+            bench["json_analisis"] = json.loads(bench["json_analisis"])
+
+        comps = await session.execute(text(
+            "SELECT * FROM hgu_evidencia_comparativas WHERE benchmark_id = :id ORDER BY orden"
+        ), {"id": bench_id})
+        comparativas = [dict(r._mapping) for r in comps]
+
+        # Conteos
+        por_estado = {}
+        por_dominio = {}
+        pioneros = 0
+        for c in comparativas:
+            e = c.get("estado_sigfar", "")
+            d = c.get("dominio_sefh", "")
+            por_estado[e] = por_estado.get(e, 0) + 1
+            por_dominio[d] = por_dominio.get(d, 0) + 1
+            if c.get("es_pionero"):
+                pioneros += 1
+
+        bench["comparativas"] = comparativas
+        bench["por_estado"] = por_estado
+        bench["por_dominio"] = por_dominio
+        bench["total_pioneros"] = pioneros
+        return bench
+
+
+# ─── POST /api/evidencia/benchmarks/analizar ───────────────────
+@app.post("/api/evidencia/benchmarks/analizar", tags=["Evidencia"])
+async def evidencia_analizar_articulo(body: dict):
+    titulo = body.get("titulo_articulo", "").strip()
+    contenido = body.get("contenido_texto", "").strip()
+    autores = body.get("autores", "")
+    revista = body.get("revista", "")
+    anio = body.get("anio")
+
+    if not titulo or not contenido:
+        raise HTTPException(400, "titulo_articulo y contenido_texto son obligatorios")
+
+    # Truncar a ~12000 chars para no exceder contexto Groq
+    contenido_truncado = contenido[:12000]
+
+    prompt_sistema = f"""Eres un analista de tecnología farmacéutica hospitalaria.
+{SIGFAR_CONTEXT_PROMPT}
+
+Analiza el artículo y genera un JSON con esta estructura:
+{{
+  "resumen_articulo": "resumen de 3-4 líneas",
+  "cobertura_global": porcentaje 0-100 de lo que SIGFAR cubre del artículo,
+  "comparativas": [
+    {{
+      "funcionalidad_articulo": "lo que el artículo describe",
+      "dominio_sefh": "AT_PRESENCIAL|AT_NO_PRESENCIAL|GESTION_LOGISTICA|EDUCACION|INVESTIGACION",
+      "estado_sigfar": "IMPLEMENTADO|PARCIAL|PLANIFICADO|NO_CONTEMPLADO|SUPERA_ARTICULO",
+      "modulo_sigfar": "P15|P36|P37|P40|P42|P43|Hub|—",
+      "descripcion_sigfar": "qué tiene SIGFAR para esta funcionalidad",
+      "ventaja_sigfar": "en qué SIGFAR va más allá (si aplica, null si no)",
+      "gap": "qué falta (si aplica, null si no)",
+      "es_pionero": true o false (true si SIGFAR tiene algo que el artículo ni menciona)
+    }}
+  ]
+}}
+IMPORTANTE: Incluye también funcionalidades que SIGFAR tiene y el artículo NO menciona (como PIONERO/SUPERA_ARTICULO).
+Responde SOLO con el JSON, sin markdown ni explicaciones."""
+
+    prompt_user = f"TÍTULO: {titulo}\n\nTEXTO DEL ARTÍCULO:\n{contenido_truncado}"
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": "llama-3.3-70b-versatile",
+                "temperature": 0.3,
+                "max_tokens": 3000,
+                "messages": [
+                    {"role": "system", "content": prompt_sistema},
+                    {"role": "user", "content": prompt_user}
+                ]
+            }
+        )
+    if resp.status_code != 200:
+        raise HTTPException(502, f"Error Groq: {resp.status_code} — {resp.text[:300]}")
+
+    raw = resp.json()["choices"][0]["message"]["content"].strip()
+    # Limpiar posible markdown wrapping
+    if raw.startswith("```"):
+        raw = _re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = _re.sub(r"\s*```$", "", raw)
+
+    try:
+        analisis = json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(502, f"Groq devolvió JSON inválido: {raw[:500]}")
+
+    resumen = analisis.get("resumen_articulo", "")
+    cobertura = analisis.get("cobertura_global", 50)
+    comparativas = analisis.get("comparativas", [])
+
+    # Insertar benchmark
+    async with async_session() as session:
+        result = await session.execute(text("""
+            INSERT INTO hgu_evidencia_benchmarks
+                (titulo_articulo, autores, revista, anio, resumen_articulo, cobertura_global, json_analisis)
+            VALUES (:titulo, :autores, :revista, :anio, :resumen, :cobertura, :json_raw)
+            RETURNING id
+        """), {
+            "titulo": titulo, "autores": autores, "revista": revista,
+            "anio": anio, "resumen": resumen, "cobertura": cobertura,
+            "json_raw": json.dumps(analisis, ensure_ascii=False)
+        })
+        bench_id = result.scalar()
+
+        # Insertar comparativas
+        for idx, comp in enumerate(comparativas):
+            estado = comp.get("estado_sigfar", "NO_CONTEMPLADO")
+            if estado not in ("IMPLEMENTADO", "PARCIAL", "PLANIFICADO", "NO_CONTEMPLADO", "SUPERA_ARTICULO"):
+                estado = "NO_CONTEMPLADO"
+            dominio = comp.get("dominio_sefh", "AT_PRESENCIAL")
+            if dominio not in ("AT_PRESENCIAL", "AT_NO_PRESENCIAL", "GESTION_LOGISTICA", "EDUCACION", "INVESTIGACION"):
+                dominio = "AT_PRESENCIAL"
+
+            await session.execute(text("""
+                INSERT INTO hgu_evidencia_comparativas
+                    (benchmark_id, funcionalidad_articulo, dominio_sefh, estado_sigfar,
+                     modulo_sigfar, descripcion_sigfar, ventaja_sigfar, gap, es_pionero, orden)
+                VALUES (:bid, :func, :dom, :estado, :mod, :desc, :ventaja, :gap, :pionero, :orden)
+            """), {
+                "bid": bench_id,
+                "func": comp.get("funcionalidad_articulo", ""),
+                "dom": dominio,
+                "estado": estado,
+                "mod": comp.get("modulo_sigfar"),
+                "desc": comp.get("descripcion_sigfar"),
+                "ventaja": comp.get("ventaja_sigfar"),
+                "gap": comp.get("gap"),
+                "pionero": bool(comp.get("es_pionero", False)),
+                "orden": idx + 1
+            })
+        await session.commit()
+
+    # Devolver benchmark completo
+    return await evidencia_benchmark_detail(bench_id)
+
+
+# ─── POST /api/evidencia/benchmarks/{id}/toggle-favorito ──────
+@app.post("/api/evidencia/benchmarks/{bench_id}/toggle-favorito", tags=["Evidencia"])
+async def evidencia_toggle_favorito(bench_id: int):
+    async with async_session() as session:
+        await session.execute(text(
+            "UPDATE hgu_evidencia_benchmarks SET favorito = NOT favorito WHERE id = :id"
+        ), {"id": bench_id})
+        await session.commit()
+        row = await session.execute(text(
+            "SELECT favorito FROM hgu_evidencia_benchmarks WHERE id = :id"
+        ), {"id": bench_id})
+        val = row.scalar()
+        return {"id": bench_id, "favorito": val}
+
+
+# ─── POST /api/evidencia/benchmarks/{id}/set-nota ─────────────
+@app.post("/api/evidencia/benchmarks/{bench_id}/set-nota", tags=["Evidencia"])
+async def evidencia_set_nota(bench_id: int, body: dict):
+    nota = body.get("nota", "")
+    async with async_session() as session:
+        await session.execute(text(
+            "UPDATE hgu_evidencia_benchmarks SET nota_usuario = :nota WHERE id = :id"
+        ), {"id": bench_id, "nota": nota})
+        await session.commit()
+        return {"id": bench_id, "nota_usuario": nota}
+
+
+# ─── DELETE /api/evidencia/benchmarks/{id} ─────────────────────
+@app.delete("/api/evidencia/benchmarks/{bench_id}", tags=["Evidencia"])
+async def evidencia_delete_benchmark(bench_id: int):
+    async with async_session() as session:
+        await session.execute(text(
+            "DELETE FROM hgu_evidencia_benchmarks WHERE id = :id"
+        ), {"id": bench_id})
+        await session.commit()
+        return {"deleted": bench_id}
+
+
+# ─── GET /api/evidencia/panel ──────────────────────────────────
+@app.get("/api/evidencia/panel", tags=["Evidencia"])
+async def evidencia_panel():
+    """Panel Futuro vs Realidad — agrega todos los benchmarks."""
+    async with async_session() as session:
+        # Cobertura media
+        cob = await session.execute(text(
+            "SELECT COALESCE(AVG(cobertura_global), 0) FROM hgu_evidencia_benchmarks"
+        ))
+        cobertura_media = round(cob.scalar() or 0)
+
+        # Conteos por dominio y estado
+        rows = await session.execute(text("""
+            SELECT dominio_sefh, estado_sigfar, count(*) as cnt
+            FROM hgu_evidencia_comparativas
+            GROUP BY dominio_sefh, estado_sigfar
+        """))
+        dominios = {}
+        for r in rows:
+            d = r.dominio_sefh or "OTRO"
+            if d not in dominios:
+                dominios[d] = {"IMPLEMENTADO": 0, "PARCIAL": 0, "PLANIFICADO": 0,
+                               "NO_CONTEMPLADO": 0, "SUPERA_ARTICULO": 0, "total": 0}
+            dominios[d][r.estado_sigfar] = r.cnt
+            dominios[d]["total"] += r.cnt
+
+        # Calcular % implementación por dominio
+        for d in dominios:
+            total = dominios[d]["total"]
+            impl = dominios[d]["IMPLEMENTADO"] + dominios[d]["SUPERA_ARTICULO"]
+            dominios[d]["pct_implementado"] = round(impl / total * 100) if total else 0
+
+        # Funcionalidades pioneras
+        pioneros = await session.execute(text("""
+            SELECT c.*, b.titulo_articulo
+            FROM hgu_evidencia_comparativas c
+            JOIN hgu_evidencia_benchmarks b ON b.id = c.benchmark_id
+            WHERE c.es_pionero = TRUE
+            ORDER BY c.orden
+        """))
+        pioneros_list = [dict(r._mapping) for r in pioneros]
+
+        # Total benchmarks
+        total_bench = await session.execute(text(
+            "SELECT count(*) FROM hgu_evidencia_benchmarks"
+        ))
+
+        return {
+            "cobertura_media": cobertura_media,
+            "total_benchmarks": total_bench.scalar(),
+            "dominios": dominios,
+            "pioneros": pioneros_list
+        }
+
+
+# ─── POST /api/evidencia/generar-paper ─────────────────────────
+@app.post("/api/evidencia/generar-paper", tags=["Evidencia"])
+async def evidencia_generar_paper(body: dict):
+    benchmark_ids = body.get("benchmark_ids", [])
+    if not benchmark_ids:
+        raise HTTPException(400, "benchmark_ids obligatorio (array de IDs)")
+
+    # Cargar benchmarks + comparativas
+    datos_texto = ""
+    async with async_session() as session:
+        for bid in benchmark_ids:
+            bench = await session.execute(text(
+                "SELECT * FROM hgu_evidencia_benchmarks WHERE id = :id"
+            ), {"id": bid})
+            b = bench.mappings().first()
+            if not b:
+                continue
+            datos_texto += f"\n\n### Artículo: {b['titulo_articulo']}"
+            datos_texto += f"\nAutores: {b['autores'] or 'N/D'} | Revista: {b['revista'] or 'N/D'} | Año: {b['anio'] or 'N/D'}"
+            datos_texto += f"\nCobertura SIGFAR: {b['cobertura_global']}%"
+            datos_texto += f"\nResumen: {b['resumen_articulo'] or ''}"
+
+            comps = await session.execute(text(
+                "SELECT * FROM hgu_evidencia_comparativas WHERE benchmark_id = :id ORDER BY orden"
+            ), {"id": bid})
+            datos_texto += "\n\n| Funcionalidad artículo | Estado SIGFAR | Módulo | Ventaja SIGFAR | Gap |"
+            datos_texto += "\n|---|---|---|---|---|"
+            for c in comps:
+                datos_texto += f"\n| {c.funcionalidad_articulo} | {c.estado_sigfar} | {c.modulo_sigfar or '—'} | {c.ventaja_sigfar or '—'} | {c.gap or '—'} |"
+
+    if not datos_texto.strip():
+        raise HTTPException(404, "No se encontraron benchmarks con esos IDs")
+
+    prompt_sistema = f"""Eres un farmacéutico investigador experto en redacción científica.
+{SIGFAR_CONTEXT_PROMPT}
+
+Con los datos de estos análisis comparativos, genera un borrador de artículo científico en español con estructura IMRyD.
+El artículo debe incluir:
+- Título propuesto (conciso, publicable en Farmacia Hospitalaria)
+- Resumen estructurado: Objetivo, Métodos, Resultados, Conclusiones (250 palabras)
+- Introducción: contexto de la IA en farmacia hospitalaria, justificación, estado del arte
+- Material y Métodos: descripción de la arquitectura SIGFAR Hub (FastAPI + PostgreSQL + React + Groq/Llama), módulos, tecnologías
+- Resultados: tabla comparativa SIGFAR vs literatura, % cobertura por dominio, funcionalidades pioneras
+- Discusión: innovaciones clave, limitaciones (estudio piloto, mono-centro, sin validación externa), líneas futuras (marcado CE, Substrate AI)
+- Conclusiones
+- Bibliografía (usar los artículos analizados como referencias)
+Formato: Markdown con ## para secciones y | para tablas."""
+
+    async with httpx.AsyncClient(timeout=90) as client:
+        resp = await client.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "model": "llama-3.3-70b-versatile",
+                "temperature": 0.4,
+                "max_tokens": 4000,
+                "messages": [
+                    {"role": "system", "content": prompt_sistema},
+                    {"role": "user", "content": f"Datos de los análisis comparativos:\n{datos_texto}"}
+                ]
+            }
+        )
+    if resp.status_code != 200:
+        raise HTTPException(502, f"Error Groq: {resp.status_code} — {resp.text[:300]}")
+
+    contenido = resp.json()["choices"][0]["message"]["content"].strip()
+
+    # Extraer título (primera línea con # o ##)
+    titulo = "Borrador artículo SIGFAR Hub"
+    for linea in contenido.split("\n"):
+        linea_strip = linea.strip().lstrip("#").strip()
+        if linea_strip:
+            titulo = linea_strip[:200]
+            break
+
+    # Guardar en BD
+    async with async_session() as session:
+        result = await session.execute(text("""
+            INSERT INTO hgu_evidencia_papers
+                (titulo, contenido_markdown, benchmarks_usados, estado)
+            VALUES (:titulo, :contenido, :bench_ids, 'BORRADOR')
+            RETURNING id
+        """), {
+            "titulo": titulo, "contenido": contenido,
+            "bench_ids": benchmark_ids
+        })
+        paper_id = result.scalar()
+        await session.commit()
+
+    return {
+        "id": paper_id, "titulo": titulo,
+        "contenido_markdown": contenido,
+        "benchmarks_usados": benchmark_ids
+    }
+
+
+# ─── GET /api/evidencia/papers ─────────────────────────────────
+@app.get("/api/evidencia/papers", tags=["Evidencia"])
+async def evidencia_papers():
+    async with async_session() as session:
+        rows = await session.execute(text("""
+            SELECT id, titulo, fecha_generacion, version, estado, favorito,
+                   benchmarks_usados, length(contenido_markdown) as chars
+            FROM hgu_evidencia_papers
+            ORDER BY fecha_generacion DESC
+        """))
+        items = []
+        for r in rows:
+            d = dict(r._mapping)
+            if d.get("fecha_generacion"):
+                d["fecha_generacion"] = str(d["fecha_generacion"])
+            items.append(d)
+        return items
+
+
+# ─── GET /api/evidencia/papers/{id} ────────────────────────────
+@app.get("/api/evidencia/papers/{paper_id}", tags=["Evidencia"])
+async def evidencia_paper_detail(paper_id: int):
+    async with async_session() as session:
+        row = await session.execute(text(
+            "SELECT * FROM hgu_evidencia_papers WHERE id = :id"
+        ), {"id": paper_id})
+        paper = row.mappings().first()
+        if not paper:
+            raise HTTPException(404, "Paper no encontrado")
+        d = dict(paper)
+        if d.get("fecha_generacion"):
+            d["fecha_generacion"] = str(d["fecha_generacion"])
+        return d
+
+
+# ─── POST /api/evidencia/papers/{id}/toggle-favorito ──────────
+@app.post("/api/evidencia/papers/{paper_id}/toggle-favorito", tags=["Evidencia"])
+async def evidencia_paper_toggle_favorito(paper_id: int):
+    async with async_session() as session:
+        await session.execute(text(
+            "UPDATE hgu_evidencia_papers SET favorito = NOT favorito WHERE id = :id"
+        ), {"id": paper_id})
+        await session.commit()
+        row = await session.execute(text(
+            "SELECT favorito FROM hgu_evidencia_papers WHERE id = :id"
+        ), {"id": paper_id})
+        return {"id": paper_id, "favorito": row.scalar()}
+
+
+# ─── POST /api/evidencia/papers/{id}/set-nota ─────────────────
+@app.post("/api/evidencia/papers/{paper_id}/set-nota", tags=["Evidencia"])
+async def evidencia_paper_set_nota(paper_id: int, body: dict):
+    nota = body.get("nota", "")
+    async with async_session() as session:
+        await session.execute(text(
+            "UPDATE hgu_evidencia_papers SET nota_usuario = :nota WHERE id = :id"
+        ), {"id": paper_id, "nota": nota})
+        await session.commit()
+        return {"id": paper_id, "nota_usuario": nota}
+
+
+# ─── GET /api/evidencia/stats ──────────────────────────────────
+@app.get("/api/evidencia/stats", tags=["Evidencia"])
+async def evidencia_stats():
+    async with async_session() as session:
+        bench_count = await session.execute(text(
+            "SELECT count(*) FROM hgu_evidencia_benchmarks"
+        ))
+        paper_count = await session.execute(text(
+            "SELECT count(*) FROM hgu_evidencia_papers"
+        ))
+        cob = await session.execute(text(
+            "SELECT COALESCE(AVG(cobertura_global), 0) FROM hgu_evidencia_benchmarks"
+        ))
+        pioneros = await session.execute(text(
+            "SELECT count(*) FROM hgu_evidencia_comparativas WHERE es_pionero = TRUE"
+        ))
+        gaps = await session.execute(text(
+            "SELECT count(*) FROM hgu_evidencia_comparativas WHERE estado_sigfar = 'NO_CONTEMPLADO'"
+        ))
+        total_comp = await session.execute(text(
+            "SELECT count(*) FROM hgu_evidencia_comparativas"
+        ))
+
+        # Dominio con más y menos cobertura
+        dom_rows = await session.execute(text("""
+            SELECT dominio_sefh,
+                   count(*) FILTER (WHERE estado_sigfar IN ('IMPLEMENTADO','SUPERA_ARTICULO')) as impl,
+                   count(*) as total
+            FROM hgu_evidencia_comparativas
+            WHERE dominio_sefh IS NOT NULL
+            GROUP BY dominio_sefh
+        """))
+        dominios_pct = {}
+        for r in dom_rows:
+            pct = round(r.impl / r.total * 100) if r.total else 0
+            dominios_pct[r.dominio_sefh] = pct
+
+        mejor = max(dominios_pct, key=dominios_pct.get) if dominios_pct else None
+        peor = min(dominios_pct, key=dominios_pct.get) if dominios_pct else None
+
+        return {
+            "total_benchmarks": bench_count.scalar(),
+            "total_papers": paper_count.scalar(),
+            "cobertura_media": round(cob.scalar() or 0),
+            "total_comparativas": total_comp.scalar(),
+            "pioneros": pioneros.scalar(),
+            "gaps": gaps.scalar(),
+            "dominio_mejor": {"dominio": mejor, "pct": dominios_pct.get(mejor, 0)} if mejor else None,
+            "dominio_peor": {"dominio": peor, "pct": dominios_pct.get(peor, 0)} if peor else None,
+            "dominios_pct": dominios_pct
+        }
 
 

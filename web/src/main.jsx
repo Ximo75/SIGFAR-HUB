@@ -2,7 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Link, Navigate, useParams } from 'react-router-dom'
 import Markdown from 'react-markdown'
-import { Activity, AlertCircle, AlertTriangle, Archive, BarChart3, BookOpen, Brain, BrainCircuit, Building2, Calculator, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, Clipboard, Clock, Cpu, Database, ExternalLink, FileText, Filter, FlaskConical, Gauge, GitBranch, Globe, GraduationCap, Heart, HeartPulse, Home, Hourglass, Hospital, Info, Layers, LayoutDashboard, Lightbulb, Mic, MicOff, MonitorSmartphone, Network, Pill, Plug, Presentation, Radar, RefreshCw, Rocket, Search, Send, Server, Shield, ShieldAlert, Sparkles, Star, Stethoscope, StickyNote, Tags, Target, TrendingDown, TrendingUp, Truck, Users, Volume2, VolumeX, Wallet, Wifi, WifiOff, Wrench, X, XCircle, Zap } from 'lucide-react'
+import { Activity, AlertCircle, AlertTriangle, Archive, BarChart3, BookOpen, Brain, BrainCircuit, Building2, Calculator, Check, CheckCircle2, ChevronDown, ChevronRight, Circle, Clipboard, ClipboardCopy, Clock, Cpu, Crown, Database, ExternalLink, FileSearch, FileText, Filter, FlaskConical, Gauge, GitBranch, Globe, GraduationCap, Heart, HeartPulse, Home, Hourglass, Hospital, Info, Layers, LayoutDashboard, Lightbulb, Mic, MicOff, MonitorSmartphone, Network, Pill, Plug, Presentation, Radar, RefreshCw, Rocket, ScrollText, Search, Send, Server, Settings, Shield, ShieldAlert, Smartphone, Sparkles, Star, Stethoscope, StickyNote, Tags, Target, Telescope, TrendingDown, TrendingUp, Truck, Users, Volume2, VolumeX, Wallet, Wifi, WifiOff, Wrench, X, XCircle, Zap } from 'lucide-react'
 import './style.css'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -36,8 +36,8 @@ function Nav() {
         <Link to="/apis"><span className="nav-icon"><Plug size={16}/></span>APIs</Link>
         <Link to="/ml"><span className="nav-icon"><BrainCircuit size={16}/></span>Algoritmos ML</Link>
         <Link to="/propuestas"><span className="nav-icon"><Lightbulb size={16}/></span>Propuestas</Link>
-        <Link to="/integraciones"><span className="nav-icon"><Network size={16}/></span>Integraciones</Link>
-        <Link to="/jefatura"><span className="nav-icon"><Building2 size={16}/></span>Dirección Servicio Farmacia</Link>
+        <Link to="/evidencia"><span className="nav-icon"><GraduationCap size={16}/></span>Evidencia</Link>
+        <Link to="/jefatura"><span className="nav-icon"><Building2 size={16}/></span>Dir. Servicio Farmacia</Link>
         <Link to="/dashboard"><span className="nav-icon"><LayoutDashboard size={16}/></span>Dashboard</Link>
         <Link to="/pacientes"><span className="nav-icon"><Users size={16}/></span>Pacientes</Link>
         <Link to="/emprm"><span className="nav-icon"><ShieldAlert size={16}/></span>EM/PRM</Link>
@@ -2502,31 +2502,21 @@ const STACK_ICON_MAP = {
   Database, Server, MonitorSmartphone, Pill, Wallet, Shield, FlaskConical,
   Target, Clipboard, Zap, Sparkles, Cpu, Brain, BookOpen, ShieldAlert,
   AlertTriangle, Tags, Calculator, Archive, Stethoscope, Hospital, GitBranch,
-  Layers, Globe, ExternalLink, Activity, Plug, Gauge
+  Layers, Globe, ExternalLink, Activity, Plug, Gauge, HeartPulse, Building2,
+  FileText, Search, Network, Clock, Hourglass
 }
-const STACK_GRUPO_LABELS = {
-  HUB_DOCKER: 'Hub Docker', APEX_APPS: 'Aplicaciones APEX',
-  IA_MODELOS: 'Modelos IA', APIS_EXTERNAS: 'APIs Externas',
-  HOSPITAL_SISTEMAS: 'Sistemas Hospital', REPO: 'Repositorios'
-}
-const STACK_GRUPO_ICONS = {
-  HUB_DOCKER: Layers, APEX_APPS: Building2, IA_MODELOS: Brain,
-  APIS_EXTERNAS: Plug, HOSPITAL_SISTEMAS: Hospital, REPO: GitBranch
-}
+const STACK_ESTADO_COLORS = { CONECTADO: '#16a34a', PENDIENTE: '#f59e0b', FUTURO: '#94a3b8', ERROR: '#dc2626' }
+const STACK_ESTADO_ICONS = { CONECTADO: CheckCircle2, PENDIENTE: Clock, FUTURO: Hourglass, ERROR: XCircle }
 const STACK_GRUPO_COLORS = {
-  HUB_DOCKER: '#0f766e', APEX_APPS: '#f59e0b', IA_MODELOS: '#8b5cf6',
-  APIS_EXTERNAS: '#2563eb', HOSPITAL_SISTEMAS: '#64748b', REPO: '#334155'
+  hub_docker: '#0f766e', apex_apps: '#f59e0b', ia_modelos: '#8b5cf6',
+  apis_externas: '#2563eb', hospital_sistemas: '#64748b', repo: '#334155'
 }
-const STACK_ESTADO_COLORS = {
-  OPERATIVO: '#16a34a', DEGRADADO: '#f59e0b', CAIDO: '#dc2626',
-  PENDIENTE: '#94a3b8', NO_APLICA: '#cbd5e1'
-}
-const STACK_GRUPO_ORDER = ['HUB_DOCKER','IA_MODELOS','APEX_APPS','APIS_EXTERNAS','HOSPITAL_SISTEMAS','REPO']
 
 function StackMap() {
   const [components, setComponents] = React.useState([])
   const [stats, setStats] = React.useState(null)
   const [loading, setLoading] = React.useState(true)
+  const [tab, setTab] = React.useState('arquitectura')
   const [testing, setTesting] = React.useState(false)
   const [testResults, setTestResults] = React.useState(null)
   const [selected, setSelected] = React.useState(null)
@@ -2561,67 +2551,72 @@ function StackMap() {
       const r = await fetch(API + `/api/stack/test/${id}`, { method: 'POST' })
       const data = await r.json()
       setComponents(prev => prev.map(c => c.id === id ? {
-        ...c, ultimo_check_ok: data.ok, latencia_ms: data.latencia_ms,
-        estado: data.ok === true ? 'OPERATIVO' : data.ok === false ? 'DEGRADADO' : c.estado
+        ...c, estado: data.ok === true ? 'CONECTADO' : data.ok === false ? 'ERROR' : c.estado,
+        _lastTest: data
       } : c))
     } catch (e) { console.error(e) }
   }
 
   if (loading) return <div className="sf-loading">Cargando arquitectura...</div>
 
-  const byGrupo = {}
-  STACK_GRUPO_ORDER.forEach(g => { byGrupo[g] = [] })
+  const byPos = { CENTRO: [], IZQUIERDA: [], DERECHA: [], ARRIBA: [], ABAJO: [] }
   components.forEach(c => {
-    if (!byGrupo[c.grupo]) byGrupo[c.grupo] = []
-    byGrupo[c.grupo].push(c)
+    const pos = c.posicion_diagrama || 'CENTRO'
+    if (byPos[pos]) byPos[pos].push(c)
   })
 
   const IconComp = (name) => STACK_ICON_MAP[name] || Circle
 
-  const renderCompCard = (c) => {
+  const renderNode = (c) => {
     const Ic = IconComp(c.icono)
     const stColor = STACK_ESTADO_COLORS[c.estado] || '#94a3b8'
-    const isSelected = selected === c.id
+    const StIcon = STACK_ESTADO_ICONS[c.estado] || Circle
+    const isOpen = selected === c.id
+    const grupoColor = STACK_GRUPO_COLORS[c.grupo] || '#64748b'
     return (
       <div key={c.id}
-        className={`stack-comp ${isSelected ? 'stack-comp-selected' : ''}`}
-        style={{ borderLeftColor: c.color || '#e8edf2' }}
-        onClick={() => setSelected(isSelected ? null : c.id)}>
-        <div className="stack-comp-top">
-          <div className="stack-comp-icon" style={{ background: c.color || '#6366f1' }}>
-            <Ic size={16} color="#fff" />
+        className={`stack-node ${c.estado.toLowerCase()} ${isOpen ? 'stack-node-open' : ''}`}
+        onClick={() => setSelected(isOpen ? null : c.id)}>
+        <div className="stack-node-top">
+          <div className="stack-node-icon" style={{ background: grupoColor }}>
+            <Ic size={15} color="#fff" />
           </div>
-          <div className="stack-comp-info">
-            <div className="stack-comp-name">{c.nombre_corto || c.nombre}</div>
-            <div className="stack-comp-tech">{c.tecnologia}{c.version ? ` ${c.version}` : ''}</div>
+          <div className="stack-node-info">
+            <div className="stack-node-name">{c.nombre}</div>
+            {c.subtipo && <div className="stack-node-sub">{c.subtipo}</div>}
           </div>
-          <div className="stack-comp-status" style={{ background: stColor }}
-            title={c.estado} />
+          <StIcon size={14} color={stColor} />
         </div>
-        {isSelected && (
-          <div className="stack-comp-detail">
-            <p style={{fontSize:12,color:'#334155',lineHeight:1.5,margin:'6px 0'}}>{c.descripcion}</p>
-            {c.puerto && <div className="stack-comp-meta"><Server size={11}/> Puerto: {c.puerto}</div>}
-            {c.conexiones && <div className="stack-comp-meta"><Network size={11}/> Conexiones: {c.conexiones}</div>}
-            {c.depende_de && <div className="stack-comp-meta"><GitBranch size={11}/> Depende de: {c.depende_de}</div>}
-            {c.ultimo_check_ok !== null && (
-              <div className="stack-comp-meta">
-                {c.ultimo_check_ok
-                  ? <span className="test-ok"><CheckCircle2 size={11}/> OK {c.latencia_ms ? `(${c.latencia_ms}ms)` : ''}</span>
-                  : <span className="test-fail"><XCircle size={11}/> Error</span>}
-              </div>
+        {isOpen && (
+          <div className="stack-node-detail">
+            <p className="stack-node-desc">{c.descripcion}</p>
+            {c.tecnologia && <div className="stack-node-meta"><Cpu size={11}/> {c.tecnologia}</div>}
+            {c.puerto && <div className="stack-node-meta"><Server size={11}/> Puerto {c.puerto}</div>}
+            {c.detalles && typeof c.detalles === 'object' && (
+              <div className="stack-node-meta"><Database size={11}/> {Object.entries(c.detalles).map(([k,v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' · ')}</div>
             )}
-            {(c.url_base || c.url_health) && (
-              <div style={{marginTop:6,display:'flex',gap:6,flexWrap:'wrap'}}>
+            <div style={{display:'flex',gap:6,marginTop:6,flexWrap:'wrap'}}>
+              {c.url && c.url.startsWith('http') && (
+                <a href={c.url} target="_blank" rel="noreferrer" className="stack-link-btn" onClick={e => e.stopPropagation()}>
+                  <ExternalLink size={11}/> Abrir
+                </a>
+              )}
+              {c.url_docs && (
+                <a href={c.url_docs} target="_blank" rel="noreferrer" className="stack-link-btn" onClick={e => e.stopPropagation()}>
+                  <BookOpen size={11}/> Docs
+                </a>
+              )}
+              {(c.url || c.url_docs) && (
                 <button className="stack-test-btn" onClick={e => { e.stopPropagation(); testOne(c.id) }}>
-                  <Activity size={12}/> Test
+                  <Zap size={11}/> Test
                 </button>
-                {c.url_base && c.url_base.startsWith('http') && (
-                  <a href={c.url_base} target="_blank" rel="noreferrer" className="stack-link-btn"
-                    onClick={e => e.stopPropagation()}>
-                    <ExternalLink size={12}/> URL
-                  </a>
-                )}
+              )}
+            </div>
+            {c._lastTest && (
+              <div className="stack-node-meta" style={{marginTop:4}}>
+                {c._lastTest.ok ? <span className="test-ok"><CheckCircle2 size={11}/> OK ({c._lastTest.latencia_ms}ms)</span>
+                  : c._lastTest.ok === false ? <span className="test-fail"><XCircle size={11}/> {c._lastTest.error || `HTTP ${c._lastTest.status_code}`}</span>
+                  : <span style={{color:'#94a3b8',fontSize:11}}>Sin URL testeable</span>}
               </div>
             )}
           </div>
@@ -2630,95 +2625,640 @@ function StackMap() {
     )
   }
 
+  const renderDiagram = () => (
+    <div className="stack-arch">
+      {/* ARRIBA: APIs externas */}
+      <div className="stack-zone stack-zone-top">
+        <div className="stack-zone-label"><Plug size={14}/> APIs Externas</div>
+        <div className="stack-zone-nodes">{byPos.ARRIBA.map(renderNode)}</div>
+      </div>
+
+      {/* Líneas de conexión arriba → centro */}
+      <div className="stack-conn-line"><span className="stack-conn-tag">REST / XML</span></div>
+
+      {/* FILA CENTRAL: Izquierda + Centro + Derecha */}
+      <div className="stack-center-row">
+        {/* IZQUIERDA: APEX Apps */}
+        <div className="stack-zone stack-zone-left">
+          <div className="stack-zone-label"><Building2 size={14}/> APEX Oracle Cloud</div>
+          <div className="stack-zone-nodes">{byPos.IZQUIERDA.map(renderNode)}</div>
+        </div>
+
+        {/* Línea izq → centro */}
+        <div className="stack-conn-vert"><span className="stack-conn-tag">ORDS REST</span></div>
+
+        {/* CENTRO: Hub Docker */}
+        <div className="stack-zone stack-zone-center">
+          <div className="stack-zone-label"><Layers size={14}/> SIGFAR Hub (Docker)</div>
+          <div className="stack-zone-nodes">{byPos.CENTRO.map(renderNode)}</div>
+        </div>
+
+        {/* Línea centro → derecha */}
+        <div className="stack-conn-vert"><span className="stack-conn-tag">API REST</span></div>
+
+        {/* DERECHA: IA + Repo */}
+        <div className="stack-zone stack-zone-right">
+          <div className="stack-zone-label"><Brain size={14}/> IA & Repo</div>
+          <div className="stack-zone-nodes">
+            {byPos.DERECHA.map(renderNode)}
+          </div>
+        </div>
+      </div>
+
+      {/* Líneas de conexión centro → abajo */}
+      <div className="stack-conn-line"><span className="stack-conn-tag">HL7 / FHIR (futuro)</span></div>
+
+      {/* ABAJO: Sistemas hospitalarios */}
+      <div className="stack-zone stack-zone-bottom">
+        <div className="stack-zone-label"><Hospital size={14}/> Sistemas Hospitalarios (futuro)</div>
+        <div className="stack-zone-nodes">{byPos.ABAJO.map(renderNode)}</div>
+      </div>
+    </div>
+  )
+
+  const renderTestStatus = () => (
+    <div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+        <h3 style={{fontSize:16,fontWeight:700,color:'#0f172a',margin:0}}>Test de Conectividad</h3>
+        <button className="apis-btn-test-all" style={{background:'#2d6a4f',color:'#fff',borderColor:'#2d6a4f'}} onClick={testAll} disabled={testing}>
+          {testing ? <><span className="radar-spinner"/> Testeando...</> : <><Zap size={14}/> Test ALL</>}
+        </button>
+      </div>
+      {testResults && (
+        <div className={`radar-scan-result ${testResults.fail === 0 ? 'ok' : 'err'}`} style={{marginBottom:16}}>
+          <Activity size={16}/> {testResults.ok} OK, {testResults.fail} fallidos, {testResults.sin_url} sin URL
+        </div>
+      )}
+      <div className="sf-table-wrap">
+        <table className="sf-table">
+          <thead><tr><th>Componente</th><th>Grupo</th><th>Tipo</th><th>URL</th><th>Estado</th></tr></thead>
+          <tbody>
+            {components.map(c => {
+              const stColor = STACK_ESTADO_COLORS[c.estado] || '#94a3b8'
+              return (
+                <tr key={c.id}>
+                  <td><strong>{c.nombre}</strong></td>
+                  <td><span style={{fontSize:10,fontWeight:600,color:'#64748b'}}>{c.grupo}</span></td>
+                  <td><span style={{fontSize:10,fontWeight:600,color:'#64748b'}}>{c.tipo}</span></td>
+                  <td>{c.url ? <a href={c.url} target="_blank" rel="noreferrer" style={{fontSize:11}}>{c.url.substring(0,40)}...</a> : <span style={{color:'#cbd5e1',fontSize:11}}>—</span>}</td>
+                  <td><span style={{color:stColor,fontWeight:700,fontSize:11}}>{c.estado}</span></td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+
   return (
     <div className="stack-page">
       <div className="stack-header">
         <div>
           <h1 style={{fontSize:24,fontWeight:800,margin:0}}>Stack SIGFAR Hub</h1>
-          <p style={{fontSize:14,opacity:.8,margin:'4px 0 0'}}>Mapa de arquitectura del ecosistema</p>
+          <p style={{fontSize:14,opacity:.8,margin:'4px 0 0'}}>Mapa de arquitectura del ecosistema CHGUV</p>
           <div className="live-badge" style={{marginTop:8}}>
-            <span className="live-dot" /> {components.length} componentes
+            <span className="live-dot" /> {stats?.conectados || 0} conectados · {stats?.total || 0} componentes
           </div>
         </div>
-        <button className="apis-btn-test-all" onClick={testAll} disabled={testing}>
-          {testing ? <><span className="radar-spinner"/> Testeando...</> : <><Activity size={16}/> Test All</>}
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          {stats && ['conectados','pendientes','futuros'].map(k => (
+            <div key={k} className="stack-header-stat">
+              <span style={{fontSize:20,fontWeight:800}}>{stats[k]}</span>
+              <span style={{fontSize:10,textTransform:'uppercase',opacity:.7}}>{k}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="radar-tabs">
+        <button className={tab === 'arquitectura' ? 'active' : ''} onClick={() => setTab('arquitectura')}>
+          <Layers size={14}/> Arquitectura
+        </button>
+        <button className={tab === 'integraciones' ? 'active' : ''} onClick={() => setTab('integraciones')}>
+          <Network size={14}/> Integraciones
+        </button>
+        <button className={tab === 'test' ? 'active' : ''} onClick={() => setTab('test')}>
+          <Zap size={14}/> Test & Status
         </button>
       </div>
 
-      {/* KPIs */}
-      {stats && (
-        <div className="stack-kpis">
-          <div className="stack-kpi">
-            <span className="stack-kpi-val" style={{color:'#0f172a'}}>{stats.total}</span>
-            <span className="stack-kpi-label">Total</span>
+      {tab === 'arquitectura' && renderDiagram()}
+
+      {tab === 'integraciones' && <Integraciones />}
+
+      {tab === 'test' && renderTestStatus()}
+
+      {/* Legend */}
+      <div className="stack-legend">
+        {Object.entries(STACK_ESTADO_COLORS).map(([k,v]) => {
+          const StI = STACK_ESTADO_ICONS[k] || Circle
+          return (
+            <div key={k} className="stack-legend-item">
+              <StI size={12} color={v} /> {k.charAt(0) + k.slice(1).toLowerCase()}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/* ═══ Evidencia SIGFAR ═══ */
+const DOMINIO_LABELS = {
+  AT_PRESENCIAL: 'At. Farmacéutica Presencial',
+  AT_NO_PRESENCIAL: 'At. Farmacéutica No Presencial',
+  GESTION_LOGISTICA: 'Gestión y Logística',
+  EDUCACION: 'Educación y Formación',
+  INVESTIGACION: 'Investigación'
+}
+const DOMINIO_ICONS = { AT_PRESENCIAL: Stethoscope, AT_NO_PRESENCIAL: Smartphone, GESTION_LOGISTICA: Settings, EDUCACION: GraduationCap, INVESTIGACION: FlaskConical }
+const ESTADO_SIGFAR_STYLES = {
+  IMPLEMENTADO: { cls: 'badge-implementado', label: 'Implementado' },
+  SUPERA_ARTICULO: { cls: 'badge-supera', label: 'Supera artículo' },
+  PARCIAL: { cls: 'badge-parcial', label: 'Parcial' },
+  PLANIFICADO: { cls: 'badge-planificado', label: 'Planificado' },
+  NO_CONTEMPLADO: { cls: 'badge-no-contemplado', label: 'No contemplado' }
+}
+
+function EvidenciaPage() {
+  const [tab, setTab] = React.useState('benchmarks')
+  const [benchmarks, setBenchmarks] = React.useState([])
+  const [stats, setStats] = React.useState(null)
+  const [panel, setPanel] = React.useState(null)
+  const [papers, setPapers] = React.useState([])
+  const [selectedBench, setSelectedBench] = React.useState(null)
+  const [selectedPaper, setSelectedPaper] = React.useState(null)
+  const [loading, setLoading] = React.useState(false)
+  const [showAnalizar, setShowAnalizar] = React.useState(false)
+  const [showGenerarPaper, setShowGenerarPaper] = React.useState(false)
+  const [formArticulo, setFormArticulo] = React.useState({ titulo_articulo: '', autores: '', revista: '', anio: '', contenido_texto: '' })
+  const [paperBenchIds, setPaperBenchIds] = React.useState([])
+
+  const reload = () => {
+    fetch(API + '/api/evidencia/benchmarks').then(r => r.json()).then(setBenchmarks).catch(() => {})
+    fetch(API + '/api/evidencia/stats').then(r => r.json()).then(setStats).catch(() => {})
+    fetch(API + '/api/evidencia/panel').then(r => r.json()).then(setPanel).catch(() => {})
+    fetch(API + '/api/evidencia/papers').then(r => r.json()).then(setPapers).catch(() => {})
+  }
+  React.useEffect(reload, [])
+
+  const openBench = async (id) => {
+    const r = await fetch(API + `/api/evidencia/benchmarks/${id}`)
+    const d = await r.json()
+    setSelectedBench(d)
+  }
+  const openPaper = async (id) => {
+    const r = await fetch(API + `/api/evidencia/papers/${id}`)
+    const d = await r.json()
+    setSelectedPaper(d)
+  }
+  const toggleFavBench = async (id) => {
+    await fetch(API + `/api/evidencia/benchmarks/${id}/toggle-favorito`, { method: 'POST' })
+    reload()
+    if (selectedBench?.id === id) openBench(id)
+  }
+  const deleteBench = async (id) => {
+    if (!confirm('¿Eliminar este benchmark y sus comparativas?')) return
+    await fetch(API + `/api/evidencia/benchmarks/${id}`, { method: 'DELETE' })
+    setSelectedBench(null)
+    reload()
+  }
+  const analizarArticulo = async () => {
+    if (!formArticulo.titulo_articulo.trim() || !formArticulo.contenido_texto.trim()) return
+    setLoading(true)
+    try {
+      const r = await fetch(API + '/api/evidencia/benchmarks/analizar', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...formArticulo, anio: formArticulo.anio ? parseInt(formArticulo.anio) : null })
+      })
+      const d = await r.json()
+      if (r.ok) {
+        setShowAnalizar(false)
+        setFormArticulo({ titulo_articulo: '', autores: '', revista: '', anio: '', contenido_texto: '' })
+        setSelectedBench(d)
+        reload()
+      } else {
+        alert(d.detail || 'Error al analizar')
+      }
+    } catch (e) { alert('Error de red: ' + e.message) }
+    setLoading(false)
+  }
+  const generarPaper = async () => {
+    if (paperBenchIds.length === 0) return
+    setLoading(true)
+    try {
+      const r = await fetch(API + '/api/evidencia/generar-paper', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ benchmark_ids: paperBenchIds })
+      })
+      const d = await r.json()
+      if (r.ok) {
+        setShowGenerarPaper(false)
+        setPaperBenchIds([])
+        setSelectedPaper(d)
+        reload()
+      } else { alert(d.detail || 'Error al generar paper') }
+    } catch (e) { alert('Error de red: ' + e.message) }
+    setLoading(false)
+  }
+  const copyMd = (md) => { navigator.clipboard.writeText(md); alert('Markdown copiado al portapapeles') }
+
+  // Simple markdown to HTML
+  const renderMd = (md) => {
+    if (!md) return null
+    let html = md
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br/>')
+    // Tables
+    html = html.replace(/\|(.+)\|\s*<br\/>\|[-| :]+\|\s*<br\/>((?:\|.+\|\s*(?:<br\/>)?)+)/g, (m, header, body) => {
+      const ths = header.split('|').filter(Boolean).map(h => `<th>${h.trim()}</th>`).join('')
+      const trs = body.split('<br/>').filter(l => l.trim() && !l.match(/^[-| :]+$/)).map(row => {
+        const tds = row.split('|').filter(Boolean).map(c => `<td>${c.trim()}</td>`).join('')
+        return `<tr>${tds}</tr>`
+      }).join('')
+      return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`
+    })
+    return <div className="paper-content" dangerouslySetInnerHTML={{ __html: `<p>${html}</p>` }} />
+  }
+
+  // Cobertura bar helper
+  const CobBar = ({ pct }) => (
+    <div className="cobertura-bar">
+      <div className={`cobertura-fill ${pct >= 70 ? 'high' : pct >= 40 ? 'mid' : 'low'}`} style={{ width: `${pct}%` }} />
+      <span className="cobertura-pct">{pct}%</span>
+    </div>
+  )
+
+  // Spider chart with SVG
+  const SpiderChart = ({ dominios }) => {
+    if (!dominios) return null
+    const keys = ['AT_PRESENCIAL', 'AT_NO_PRESENCIAL', 'GESTION_LOGISTICA', 'EDUCACION', 'INVESTIGACION']
+    const cx = 150, cy = 150, R = 120
+    const angles = keys.map((_, i) => (Math.PI * 2 * i / keys.length) - Math.PI / 2)
+    const pointsMax = angles.map(a => `${cx + R * Math.cos(a)},${cy + R * Math.sin(a)}`).join(' ')
+    const vals = keys.map(k => (dominios[k]?.pct_implementado || 0) / 100)
+    const pointsVal = angles.map((a, i) => `${cx + R * vals[i] * Math.cos(a)},${cy + R * vals[i] * Math.sin(a)}`).join(' ')
+    return (
+      <svg viewBox="0 0 300 300" className="spider-chart">
+        {[0.25, 0.5, 0.75, 1].map(s => (
+          <polygon key={s} points={angles.map(a => `${cx + R * s * Math.cos(a)},${cy + R * s * Math.sin(a)}`).join(' ')}
+            fill="none" stroke="#e0ddd5" strokeWidth={0.5} />
+        ))}
+        {angles.map((a, i) => (
+          <React.Fragment key={i}>
+            <line x1={cx} y1={cy} x2={cx + R * Math.cos(a)} y2={cy + R * Math.sin(a)} stroke="#e0ddd5" strokeWidth={0.5} />
+            <text x={cx + (R + 15) * Math.cos(a)} y={cy + (R + 15) * Math.sin(a)}
+              textAnchor="middle" dominantBaseline="middle" fontSize="8" fill="#64748b">
+              {(DOMINIO_LABELS[keys[i]] || keys[i]).split(' ').slice(0, 2).join(' ')}
+            </text>
+          </React.Fragment>
+        ))}
+        <polygon points={pointsVal} fill="rgba(22,163,74,0.2)" stroke="#16a34a" strokeWidth={2} />
+        {angles.map((a, i) => (
+          <circle key={i} cx={cx + R * vals[i] * Math.cos(a)} cy={cy + R * vals[i] * Math.sin(a)}
+            r={4} fill="#16a34a" stroke="#fff" strokeWidth={2} />
+        ))}
+      </svg>
+    )
+  }
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="evidencia-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <GraduationCap size={28} />
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1.3rem' }}>SIGFAR Hub · Evidencia SIGFAR</h2>
+            <p style={{ margin: 0, fontSize: '0.85rem', opacity: 0.8 }}>Benchmarking científico · Panel Futuro vs Realidad · Papers</p>
           </div>
-          <div className="stack-kpi">
-            <span className="stack-kpi-val" style={{color:'#16a34a'}}>{stats.operativos}</span>
-            <span className="stack-kpi-label">Operativos</span>
+        </div>
+        {stats && (
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+            <div className="ev-stat"><FileSearch size={14} /> {stats.total_benchmarks} benchmarks</div>
+            <div className="ev-stat"><Crown size={14} /> {stats.pioneros} pioneros</div>
+            <div className="ev-stat"><Target size={14} /> {stats.cobertura_media}% cobertura</div>
+            <div className="ev-stat"><ScrollText size={14} /> {stats.total_papers} papers</div>
           </div>
-          <div className="stack-kpi">
-            <span className="stack-kpi-val" style={{color:'#f59e0b'}}>{stats.degradados}</span>
-            <span className="stack-kpi-label">Degradados</span>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
+        {[
+          { k: 'benchmarks', icon: FileSearch, label: 'Benchmarks' },
+          { k: 'panel', icon: Telescope, label: 'Futuro vs Realidad' },
+          { k: 'papers', icon: ScrollText, label: 'Papers' }
+        ].map(t => (
+          <button key={t.k} className={`filter-chip ${tab === t.k ? 'active' : ''}`}
+            onClick={() => { setTab(t.k); setSelectedBench(null); setSelectedPaper(null) }}>
+            <t.icon size={13} style={{ marginRight: 4 }} />{t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Loading overlay */}
+      {loading && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: '2rem 3rem', textAlign: 'center' }}>
+            <RefreshCw size={32} className="spin" style={{ color: '#1a3a2a' }} />
+            <p style={{ marginTop: 12, fontWeight: 600 }}>Analizando con IA...</p>
+            <p style={{ fontSize: '0.8rem', color: '#888' }}>Esto puede tardar 15-30 segundos</p>
           </div>
-          <div className="stack-kpi">
-            <span className="stack-kpi-val" style={{color:'#dc2626'}}>{stats.caidos}</span>
-            <span className="stack-kpi-label">Caidos</span>
+        </div>
+      )}
+
+      {/* ─── TAB BENCHMARKS ─── */}
+      {tab === 'benchmarks' && !selectedBench && (
+        <div>
+          <div style={{ marginBottom: 16 }}>
+            <button className="ev-btn-primary" onClick={() => setShowAnalizar(true)}>
+              <Brain size={16} /> Analizar nuevo artículo
+            </button>
           </div>
-          <div className="stack-kpi">
-            <span className="stack-kpi-val" style={{color:'#94a3b8'}}>{stats.pendientes}</span>
-            <span className="stack-kpi-label">Pendientes</span>
+
+          {/* Modal analizar */}
+          {showAnalizar && (
+            <div className="ev-modal-overlay" onClick={() => setShowAnalizar(false)}>
+              <div className="ev-modal" onClick={e => e.stopPropagation()}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <h3 style={{ margin: 0 }}><Brain size={18} style={{ marginRight: 8 }} />Analizar artículo con IA</h3>
+                  <button onClick={() => setShowAnalizar(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><X size={20} /></button>
+                </div>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <input placeholder="Título del artículo *" value={formArticulo.titulo_articulo}
+                    onChange={e => setFormArticulo({ ...formArticulo, titulo_articulo: e.target.value })}
+                    className="ev-input" />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 100px', gap: 8 }}>
+                    <input placeholder="Autores" value={formArticulo.autores}
+                      onChange={e => setFormArticulo({ ...formArticulo, autores: e.target.value })} className="ev-input" />
+                    <input placeholder="Revista" value={formArticulo.revista}
+                      onChange={e => setFormArticulo({ ...formArticulo, revista: e.target.value })} className="ev-input" />
+                    <input placeholder="Año" type="number" value={formArticulo.anio}
+                      onChange={e => setFormArticulo({ ...formArticulo, anio: e.target.value })} className="ev-input" />
+                  </div>
+                  <textarea placeholder="Pega aquí el texto completo del artículo *" value={formArticulo.contenido_texto}
+                    onChange={e => setFormArticulo({ ...formArticulo, contenido_texto: e.target.value })}
+                    className="ev-input modal-evidencia-textarea" />
+                  <button className="ev-btn-primary" onClick={analizarArticulo}
+                    disabled={!formArticulo.titulo_articulo.trim() || !formArticulo.contenido_texto.trim()}>
+                    <Sparkles size={16} /> Analizar con IA
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Grid de benchmarks */}
+          <div className="evidencia-grid">
+            {benchmarks.map(b => (
+              <div key={b.id} className="ev-card" onClick={() => openBench(b.id)} style={{ cursor: 'pointer' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 700, color: '#1a3a2a', marginBottom: 4 }}>{b.titulo_articulo}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#888' }}>{b.autores}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#888' }}>{b.revista} {b.anio ? `(${b.anio})` : ''}</div>
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); toggleFavBench(b.id) }}
+                    className="fav-btn" style={{ background: 'none', border: 'none' }}>
+                    <Star size={18} fill={b.favorito ? '#f59e0b' : 'none'} color={b.favorito ? '#f59e0b' : '#ccc'} />
+                  </button>
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <CobBar pct={b.cobertura_global || 0} />
+                </div>
+                <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#888' }}>
+                  <span>{b.num_comparativas} comparativas</span>
+                  <span>{b.fecha_analisis?.split(' ')[0]}</span>
+                </div>
+              </div>
+            ))}
           </div>
-          {stats.test_ok > 0 && (
-            <div className="stack-kpi">
-              <span className="stack-kpi-val" style={{color:'#16a34a'}}>{stats.test_ok}</span>
-              <span className="stack-kpi-label">Test OK</span>
+        </div>
+      )}
+
+      {/* ─── Benchmark detail ─── */}
+      {tab === 'benchmarks' && selectedBench && (
+        <div>
+          <button onClick={() => setSelectedBench(null)} className="ev-btn-back">
+            <ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} /> Volver a benchmarks
+          </button>
+          <div className="ev-card" style={{ marginTop: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+              <div>
+                <h3 style={{ margin: '0 0 4px', fontSize: '1.1rem', color: '#1a3a2a' }}>{selectedBench.titulo_articulo}</h3>
+                <div style={{ fontSize: '0.8rem', color: '#888' }}>{selectedBench.autores} — {selectedBench.revista} {selectedBench.anio ? `(${selectedBench.anio})` : ''}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => toggleFavBench(selectedBench.id)} className="fav-btn" style={{ background: 'none', border: 'none' }}>
+                  <Star size={20} fill={selectedBench.favorito ? '#f59e0b' : 'none'} color={selectedBench.favorito ? '#f59e0b' : '#ccc'} />
+                </button>
+                <button onClick={() => deleteBench(selectedBench.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626' }}>
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+            {selectedBench.resumen_articulo && (
+              <p style={{ fontSize: '0.85rem', color: '#555', lineHeight: 1.6, margin: '12px 0' }}>{selectedBench.resumen_articulo}</p>
+            )}
+            <div style={{ margin: '12px 0' }}>
+              <CobBar pct={selectedBench.cobertura_global || 0} />
+            </div>
+
+            {/* Stats badges */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '12px 0' }}>
+              {Object.entries(selectedBench.por_estado || {}).map(([k, v]) => (
+                <span key={k} className={ESTADO_SIGFAR_STYLES[k]?.cls || 'badge-no-contemplado'}>
+                  {ESTADO_SIGFAR_STYLES[k]?.label || k}: {v}
+                </span>
+              ))}
+              {selectedBench.total_pioneros > 0 && (
+                <span className="badge-supera"><Crown size={12} style={{ marginRight: 4 }} />{selectedBench.total_pioneros} pioneros</span>
+              )}
+            </div>
+
+            {/* Tabla comparativas */}
+            <div style={{ overflowX: 'auto', marginTop: 16 }}>
+              <table className="ev-table">
+                <thead>
+                  <tr>
+                    <th>Funcionalidad artículo</th>
+                    <th>Dominio</th>
+                    <th>Estado SIGFAR</th>
+                    <th>Módulo</th>
+                    <th>Ventaja SIGFAR</th>
+                    <th>Gap</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectedBench.comparativas || []).map(c => (
+                    <tr key={c.id}>
+                      <td style={{ fontWeight: 600, fontSize: '0.8rem' }}>
+                        {c.es_pionero && <Crown size={13} color="#f59e0b" style={{ marginRight: 4 }} />}
+                        {c.funcionalidad_articulo}
+                      </td>
+                      <td style={{ fontSize: '0.75rem' }}>
+                        {(() => { const DI = DOMINIO_ICONS[c.dominio_sefh]; return DI ? <DI size={12} style={{ marginRight: 3 }} /> : null })()}
+                        {(DOMINIO_LABELS[c.dominio_sefh] || c.dominio_sefh || '').split(' ').slice(0, 2).join(' ')}
+                      </td>
+                      <td><span className={ESTADO_SIGFAR_STYLES[c.estado_sigfar]?.cls || ''}>{ESTADO_SIGFAR_STYLES[c.estado_sigfar]?.label || c.estado_sigfar}</span></td>
+                      <td style={{ fontSize: '0.8rem', fontWeight: 600 }}>{c.modulo_sigfar || '—'}</td>
+                      <td style={{ fontSize: '0.78rem' }}>{c.ventaja_sigfar || '—'}</td>
+                      <td style={{ fontSize: '0.78rem' }}>{c.gap || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TAB PANEL FUTURO VS REALIDAD ─── */}
+      {tab === 'panel' && panel && (
+        <div>
+          {/* Cobertura global */}
+          <div className="ev-card" style={{ marginBottom: 16, textAlign: 'center' }}>
+            <h3 style={{ margin: '0 0 8px', color: '#1a3a2a' }}>SIGFAR cubre el {panel.cobertura_media}% del estado del arte</h3>
+            <div style={{ maxWidth: 500, margin: '0 auto' }}><CobBar pct={panel.cobertura_media} /></div>
+          </div>
+
+          {/* Spider chart + dominios */}
+          <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 16, alignItems: 'start' }}>
+            <div className="ev-card" style={{ textAlign: 'center' }}>
+              <h4 style={{ margin: '0 0 8px', fontSize: '0.9rem', color: '#1a3a2a' }}>Cobertura por dominio</h4>
+              <SpiderChart dominios={panel.dominios} />
+            </div>
+            <div style={{ display: 'grid', gap: 12 }}>
+              {Object.entries(panel.dominios || {}).map(([dom, data]) => {
+                const DIcon = DOMINIO_ICONS[dom] || Circle
+                return (
+                  <div key={dom} className="ev-card">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <DIcon size={18} color="#1a3a2a" />
+                      <span style={{ fontWeight: 700, fontSize: '0.9rem', color: '#1a3a2a' }}>{DOMINIO_LABELS[dom] || dom}</span>
+                      <span style={{ marginLeft: 'auto', fontWeight: 700, fontSize: '0.9rem', color: data.pct_implementado >= 70 ? '#16a34a' : data.pct_implementado >= 40 ? '#f59e0b' : '#dc2626' }}>
+                        {data.pct_implementado}%
+                      </span>
+                    </div>
+                    <CobBar pct={data.pct_implementado} />
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                      {data.IMPLEMENTADO > 0 && <span className="badge-implementado">{data.IMPLEMENTADO} impl.</span>}
+                      {data.SUPERA_ARTICULO > 0 && <span className="badge-supera">{data.SUPERA_ARTICULO} supera</span>}
+                      {data.PARCIAL > 0 && <span className="badge-parcial">{data.PARCIAL} parcial</span>}
+                      {data.PLANIFICADO > 0 && <span className="badge-planificado">{data.PLANIFICADO} planif.</span>}
+                      {data.NO_CONTEMPLADO > 0 && <span className="badge-no-contemplado">{data.NO_CONTEMPLADO} gap</span>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Innovaciones pioneras */}
+          {panel.pioneros && panel.pioneros.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <h3 style={{ color: '#1a3a2a', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Crown size={20} color="#f59e0b" /> Innovaciones PIONERAS de SIGFAR
+              </h3>
+              <div className="evidencia-grid">
+                {panel.pioneros.map(p => (
+                  <div key={p.id} className="pionero-card">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <Crown size={16} color="#f59e0b" />
+                      <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#92400e' }}>{p.funcionalidad_articulo}</span>
+                    </div>
+                    <span className="badge-supera" style={{ marginBottom: 6, display: 'inline-block' }}>{p.modulo_sigfar || 'Hub'}</span>
+                    <p style={{ fontSize: '0.8rem', color: '#555', margin: '6px 0 0', lineHeight: 1.5 }}>{p.ventaja_sigfar}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Test results banner */}
-      {testResults && (
-        <div className={`radar-scan-result ${testResults.fail === 0 ? 'ok' : 'err'}`}>
-          <Activity size={16}/>
-          Test completado: {testResults.ok} OK, {testResults.fail} fallidos, {testResults.sin_url} sin URL
+      {/* ─── TAB PAPERS ─── */}
+      {tab === 'papers' && !selectedPaper && (
+        <div>
+          <div style={{ marginBottom: 16 }}>
+            <button className="ev-btn-primary" onClick={() => setShowGenerarPaper(true)}>
+              <Brain size={16} /> Generar borrador de artículo
+            </button>
+          </div>
+
+          {/* Modal generar paper */}
+          {showGenerarPaper && (
+            <div className="ev-modal-overlay" onClick={() => setShowGenerarPaper(false)}>
+              <div className="ev-modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 500 }}>
+                <h3 style={{ margin: '0 0 12px' }}><ScrollText size={18} style={{ marginRight: 8 }} />Selecciona benchmarks como fuente</h3>
+                {benchmarks.length === 0 && <p style={{ color: '#888' }}>No hay benchmarks disponibles. Analiza un artículo primero.</p>}
+                {benchmarks.map(b => (
+                  <label key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #eee', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={paperBenchIds.includes(b.id)}
+                      onChange={() => setPaperBenchIds(prev => prev.includes(b.id) ? prev.filter(x => x !== b.id) : [...prev, b.id])} />
+                    <span style={{ fontSize: '0.85rem' }}>{b.titulo_articulo} ({b.anio})</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: '#888' }}>{b.cobertura_global}%</span>
+                  </label>
+                ))}
+                <button className="ev-btn-primary" style={{ marginTop: 12 }} onClick={generarPaper}
+                  disabled={paperBenchIds.length === 0}>
+                  <Sparkles size={16} /> Generar paper con IA
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Lista de papers */}
+          <div className="evidencia-grid">
+            {papers.map(p => (
+              <div key={p.id} className="ev-card" onClick={() => openPaper(p.id)} style={{ cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <ScrollText size={18} color="#1a3a2a" />
+                  <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#1a3a2a', flex: 1 }}>{p.titulo}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, fontSize: '0.75rem', color: '#888' }}>
+                  <span>v{p.version}</span>
+                  <span className={`badge-${p.estado === 'BORRADOR' ? 'planificado' : p.estado === 'EN_REVISION' ? 'parcial' : p.estado === 'ENVIADO' ? 'supera' : 'implementado'}`}>
+                    {p.estado}
+                  </span>
+                  <span>{p.fecha_generacion?.split(' ')[0]}</span>
+                  <span>{Math.round((p.chars || 0) / 1000)}k chars</span>
+                </div>
+              </div>
+            ))}
+            {papers.length === 0 && <p style={{ color: '#888', fontSize: '0.85rem' }}>No hay papers generados. Analiza un artículo y genera un borrador.</p>}
+          </div>
         </div>
       )}
 
-      {/* Architecture diagram */}
-      <div className="stack-diagram">
-        {STACK_GRUPO_ORDER.map(grupo => {
-          const comps = byGrupo[grupo] || []
-          if (!comps.length) return null
-          const GrupoIcon = STACK_GRUPO_ICONS[grupo] || Circle
-          const grupoColor = STACK_GRUPO_COLORS[grupo]
-          const operativos = comps.filter(c => c.estado === 'OPERATIVO').length
-          return (
-            <div key={grupo} className={`stack-group stack-group-${grupo.toLowerCase()}`}>
-              <div className="stack-group-header" style={{ borderLeftColor: grupoColor }}>
-                <GrupoIcon size={18} color={grupoColor} />
-                <span className="stack-group-title">{STACK_GRUPO_LABELS[grupo]}</span>
-                <span className="stack-group-count" style={{ color: grupoColor }}>
-                  {operativos}/{comps.length}
-                </span>
-              </div>
-              <div className="stack-group-grid">
-                {comps.map(renderCompCard)}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-
-      {/* Legend */}
-      <div className="stack-legend">
-        {Object.entries(STACK_ESTADO_COLORS).map(([k,v]) => (
-          <div key={k} className="stack-legend-item">
-            <span className="stack-legend-dot" style={{ background: v }} />
-            {k.charAt(0) + k.slice(1).toLowerCase().replace('_',' ')}
+      {/* ─── Paper detail ─── */}
+      {tab === 'papers' && selectedPaper && (
+        <div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            <button onClick={() => setSelectedPaper(null)} className="ev-btn-back">
+              <ChevronRight size={14} style={{ transform: 'rotate(180deg)' }} /> Volver a papers
+            </button>
+            <button className="ev-btn-secondary" onClick={() => copyMd(selectedPaper.contenido_markdown)}>
+              <ClipboardCopy size={14} /> Copiar Markdown
+            </button>
           </div>
-        ))}
-      </div>
+          <div className="ev-card">
+            <h3 style={{ margin: '0 0 4px', color: '#1a3a2a' }}>{selectedPaper.titulo}</h3>
+            <div style={{ fontSize: '0.75rem', color: '#888', marginBottom: 16 }}>
+              v{selectedPaper.version} · {selectedPaper.estado} · {selectedPaper.fecha_generacion?.split(' ')[0]}
+            </div>
+            {renderMd(selectedPaper.contenido_markdown)}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2736,12 +3276,13 @@ function App() {
           <Route path="/pacientes" element={<Pacientes />} />
           <Route path="/paciente/:id" element={<FichaPaciente />} />
           <Route path="/emprm" element={<EmprmPendientes />} />
-          <Route path="/integraciones" element={<Integraciones />} />
+          <Route path="/integraciones" element={<Navigate to="/stack" replace />} />
           <Route path="/jefatura" element={<Jefatura />} />
           <Route path="/radar" element={<RadarIA />} />
           <Route path="/apis" element={<CatalogoAPIs />} />
           <Route path="/ml" element={<AlgoritmosML />} />
           <Route path="/propuestas" element={<PropuestasEstrategicas />} />
+          <Route path="/evidencia" element={<EvidenciaPage />} />
         </Routes>
       </main>
     </BrowserRouter>
